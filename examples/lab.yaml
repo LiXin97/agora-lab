@@ -1,0 +1,98 @@
+lab_name: "ML Research Lab"
+research_topic: "Efficient attention mechanisms for long-context LLMs"
+
+roles:
+  supervisor:
+    template: supervisor.claude.md
+    default_backend: claude-code
+    default_model: opus
+    skills: [shared-references, core-kanban, core-meeting, core-handoff, supervisor-planning, supervisor-tasking, supervisor-meeting, supervisor-decision, supervisor-integration]
+    can_assign_tasks: true
+    can_make_decisions: true
+    max_instances: 1
+
+  student:
+    template: student.claude.md
+    default_backend: claude-code
+    default_model: ""
+    skills: [shared-references, core-kanban, core-meeting, core-handoff, student-literature, student-idea-refine, student-experiment-design, student-run-experiment, student-analyze-results, student-write-paper, student-meeting]
+    max_instances: 0
+
+  research-staff:
+    template: research-staff.claude.md
+    default_backend: claude-code
+    default_model: ""
+    skills: [shared-references, core-kanban, core-meeting, core-handoff, research-staff-judgment, research-staff-meeting]
+    max_instances: 0
+
+  paper-reviewer:
+    template: paper-reviewer.claude.md
+    default_backend: claude-code
+    default_model: ""
+    skills: [shared-references, core-kanban, core-handoff, paper-reviewer-critique, paper-reviewer-novelty-check, paper-reviewer-results-to-claims, paper-reviewer-evidence-audit]
+    max_instances: 0
+
+agents:
+  supervisor:
+    role: supervisor
+    backend: claude-code
+    model: opus
+    persona_preset: supervisor-visionary-architect
+    mbti: ENTJ
+    background: "A field-defining research leader with rare range across strategy, technical depth, and team building, known for setting agendas that other groups eventually follow."
+    notable_results: "Led multiple landmark research programs to top-tier publications | Mentored researchers into premier fellowships and faculty roles | Built a research platform adopted across academia and industry"
+
+  student-a:
+    role: student
+    backend: claude-code
+    model: ""
+    direction: "Linear attention variants (e.g., Mamba, RWKV, RetNet)"
+    persona_preset: student-systems-prodigy
+    mbti: ENTP
+    background: "A fellowship-caliber researcher trained across retrieval, distributed systems, and large-model infrastructure, known for translating ambitious ideas into reproducible high-performance research stacks."
+    notable_results: "Built a 100M-document retrieval platform used across multiple research efforts | First-author spotlight paper on efficient retrieval systems at a top venue | Open-sourced an evaluation harness adopted by several labs"
+
+  student-b:
+    role: student
+    backend: claude-code
+    model: ""
+    direction: "Sparse attention and local-global hybrid patterns"
+    persona_preset: student-theory-bridge
+    mbti: INTJ
+    background: "A mathematically sharp ML researcher with unusual strength in theory-grounded empirical work, able to connect optimization, generalization, and model behavior without losing contact with practice."
+    notable_results: "First-author oral on optimization theory for foundation models | Proved convergence results that influenced a widely reused training recipe | Won a best student paper award for theory-meets-systems work"
+
+  research-staff-1:
+    role: research-staff
+    backend: claude-code
+    model: ""
+    persona_preset: research-staff-rigorous-mentor
+    mbti: INTJ
+    background: "A senior postdoc with a record of turning half-formed student ideas into publication-ready research through disciplined critique."
+    notable_results: "Co-led multiple top-tier papers | Mentored students into strong first-author publications"
+
+  paper-reviewer-1:
+    role: paper-reviewer
+    backend: claude-code
+    model: ""
+    persona_preset: paper-reviewer-methods-hawk
+    mbti: INTJ
+    background: "A veteran conference reviewer with strong standards for novelty, rigor, and claims-to-evidence alignment."
+    notable_results: "Outstanding reviewer awards | Repeated service on top-tier program committees"
+
+meeting:
+  trigger: manual
+  min_participants: 3
+  decision_maker: supervisor
+  require_all_read: true
+
+security:
+  allow_unsafe_backends: false
+
+communication:
+  method: file
+  message_dir: shared/messages/
+  meeting_dir: shared/meetings/
+  kanban_file: shared/KANBAN.md
+  artifact_dir: shared/artifacts/
+  paper_review_dir: shared/paper-reviews/

@@ -1,0 +1,76 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash ../../scripts/lab-kanban.sh -caller {{AGENT_NAME}} -*)",
+      "Bash(bash ../../scripts/lab-meeting.sh -caller {{AGENT_NAME}} -*)",
+      "Bash(bash ../../scripts/lab-poll.sh {{AGENT_NAME}}*)",
+      "Bash(bash ../../scripts/lab-agent.sh -list*)",
+      "Bash(bash ../../scripts/lab-agent.sh -status*)",
+      {{SKILL_ALLOWS}}
+      "Read({{KANBAN_FILE_REL}})",
+      "Read({{ARTIFACT_DIR_REL}}**)",
+      "Read({{MESSAGE_DIR_REL}}**)",
+      "Read({{MEETING_DIR_REL}}**)",
+      "Read(../../LAB.md)",
+      "Read(../../lab.yaml)",
+      "Read(workspace/**)",
+      "Read(memory.md)",
+      "Read(CLAUDE.md)",
+      "Read(AGENTS.md)",
+      "Write(workspace/**)",
+      "Write(memory.md)",
+      "Write({{ARTIFACT_DIR_REL}}{{AGENT_NAME}}/**)",
+      "Write({{MESSAGE_DIR_REL}}**)",
+      "Write({{MEETING_DIR_REL}}**)",
+      "Edit(workspace/**)",
+      "Edit(memory.md)",
+      "Edit({{ARTIFACT_DIR_REL}}{{AGENT_NAME}}/**)",
+      "Edit({{MESSAGE_DIR_REL}}**)",
+      "Edit({{MEETING_DIR_REL}}**)"
+    ],
+    "deny": [
+      "Bash(*)",
+      "Skill(*)",
+      "NotebookEdit(*)",
+      "Read(../../agents/**)",
+      "Write(../../agents/**)",
+      "Edit(../../agents/**)",
+      "Write({{KANBAN_FILE_REL}})",
+      "Edit({{KANBAN_FILE_REL}})"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../hooks/workspace-guard.sh \"{{AGENT_NAME}}\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../hooks/kanban-guard.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../hooks/meeting-inject.sh \"{{AGENT_NAME}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

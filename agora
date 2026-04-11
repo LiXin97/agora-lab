@@ -1,0 +1,804 @@
+#!/usr/bin/env bash
+# agora — Unified CLI for Agora Lab
+# One entry point for the adversarial multi-agent research framework.
+
+set -euo pipefail
+
+# --- Framework home detection ---
+resolve_self_dir() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" == /* ]] || source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")" && pwd
+}
+
+SELF_DIR="$(resolve_self_dir)"
+resolve_framework_home() {
+  local declared_home="${AGORA_HOME:-}"
+  local candidate
+  if [[ -n "$declared_home" ]]; then
+    for candidate in "$declared_home" "$SELF_DIR" "$(dirname "$SELF_DIR")"; do
+      [[ -n "$candidate" ]] || continue
+      if [[ -f "$candidate/scripts/lab-init.sh" && -d "$candidate/templates" && -d "$candidate/skills" && -d "$candidate/hooks" ]]; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    done
+    printf '%s' "$declared_home"
+    return 0
+  fi
+
+  for candidate in "$SELF_DIR" "$(dirname "$SELF_DIR")" "$HOME/.agora"; do
+    [[ -n "$candidate" ]] || continue
+    if [[ -f "$candidate/scripts/lab-init.sh" && -d "$candidate/templates" && -d "$candidate/skills" && -d "$candidate/hooks" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  printf '%s' "$HOME/.agora"
+}
+
+AGORA_HOME="$(resolve_framework_home)"
+SCRIPTS="$AGORA_HOME/scripts"
+PATH_LIB="$SCRIPTS/path-lib.sh"
+# shellcheck source=/dev/null
+[[ -f "$PATH_LIB" ]] && source "$PATH_LIB"
+
+err() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
+info() { printf '%s\n' "$1" >&2; }
+
+require_path_lib() {
+  [[ -f "$PATH_LIB" ]] || err "path-lib.sh not found at '$PATH_LIB'. Reinstall Agora or reinitialize the project runtime."
+}
+
+use_framework_home() {
+  local home="$1"
+  AGORA_HOME="$home"
+  SCRIPTS="$AGORA_HOME/scripts"
+  PATH_LIB="$SCRIPTS/path-lib.sh"
+  # shellcheck source=/dev/null
+  [[ -f "$PATH_LIB" ]] && source "$PATH_LIB"
+}
+
+project_runtime_home() {
+  local project_dir="${1:-}"
+  [[ -n "$project_dir" ]] || return 1
+  if project_runtime_present "$project_dir" && ! project_runtime_missing_entries "$project_dir" >/dev/null; then
+    printf '%s' "$project_dir"
+    return 0
+  fi
+  return 1
+}
+
+# Detect whether .agora contains a copied runtime (or a partially damaged copy)
+# rather than the default symlinked helpers. Damaged copies must fail closed.
+project_runtime_present() {
+  local project_dir="${1:-}"
+  [[ -n "$project_dir" ]] || return 1
+  [[ -d "$project_dir/templates" && ! -L "$project_dir/templates" ]] && return 0
+  [[ -d "$project_dir/skills" && ! -L "$project_dir/skills" ]] && return 0
+  [[ -d "$project_dir/scripts" && ! -L "$project_dir/scripts" ]] && return 0
+  [[ -d "$project_dir/hooks" && ! -L "$project_dir/hooks" ]] && return 0
+  return 1
+}
+
+project_runtime_missing_entries() {
+  local project_dir="${1:-}"
+  [[ -n "$project_dir" ]] || return 1
+  project_runtime_present "$project_dir" || return 1
+
+  local missing=()
+  local required_entries=(
+    "scripts/lab-init.sh"
+    "scripts/lab-agent.sh"
+    "scripts/lab-meeting.sh"
+    "scripts/lab-paper-review.sh"
+    "scripts/lab-kanban.sh"
+    "scripts/lab-poll.sh"
+    "scripts/kanban-schema.sh"
+    "scripts/path-lib.sh"
+    "scripts/persona-lib.sh"
+    "hooks/workspace-guard.sh"
+    "hooks/kanban-guard.sh"
+    "hooks/meeting-inject.sh"
+    "templates/supervisor.claude.md"
+    "templates/student.claude.md"
+    "templates/research-staff.claude.md"
+    "templates/paper-reviewer.claude.md"
+    "templates/settings.json.tmpl"
+    "templates/settings.student.json.tmpl"
+    "templates/settings.supervisor.json.tmpl"
+    "templates/settings.research-staff.json.tmpl"
+    "templates/settings.paper-reviewer.json.tmpl"
+  )
+  local entry
+  for entry in "${required_entries[@]}"; do
+    [[ -e "$project_dir/$entry" ]] || missing+=("$entry")
+  done
+  [[ -d "$project_dir/templates" ]] || missing+=("templates/")
+  [[ -d "$project_dir/skills" ]] || missing+=("skills/")
+  [[ -d "$project_dir/hooks" ]] || missing+=("hooks/")
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    local IFS=', '
+    printf '%s' "${missing[*]}"
+    return 0
+  fi
+  return 1
+}
+
+# Trust only wrappers whose real filesystem location lives with the project.
+# A project-local symlink to an external wrapper must not implicitly gain trust.
+wrapper_trusts_project_runtime() {
+  local project_dir="$1"
+  local wrapper_dir project_root
+  wrapper_dir="$(cd "$SELF_DIR" && pwd -P)"
+  project_root="$(cd "$(dirname "$project_dir")" && pwd -P)"
+  [[ "$wrapper_dir" == "$project_root" ]]
+}
+
+maybe_use_project_runtime() {
+  local project_dir="${AGORA_PROJECT_DIR:-}" runtime_home="" missing_entries=""
+  if [[ -z "$project_dir" ]]; then
+    project_dir="$(find_project_dir 2>/dev/null || true)"
+  fi
+  [[ -n "$project_dir" ]] || return 0
+  missing_entries="$(project_runtime_missing_entries "$project_dir" || true)"
+  [[ -z "$missing_entries" ]] || err "This lab has an incomplete project-local runtime (missing: $missing_entries). Reinstall Agora or reinitialize the project runtime."
+  runtime_home="$(project_runtime_home "$project_dir" || true)"
+  if [[ -n "$runtime_home" ]] && wrapper_trusts_project_runtime "$project_dir"; then
+    AGORA_PROJECT_DIR="$project_dir"
+    use_framework_home "$runtime_home"
+  fi
+}
+
+require_mutation_runtime() {
+  require_project
+  local project_runtime="" missing_entries=""
+  missing_entries="$(project_runtime_missing_entries "$AGORA_PROJECT_DIR" || true)"
+  [[ -z "$missing_entries" ]] || err "This lab has an incomplete project-local runtime (missing: $missing_entries). Reinstall Agora or reinitialize the project runtime."
+  project_runtime="$(project_runtime_home "$AGORA_PROJECT_DIR" || true)"
+  if [[ -n "$project_runtime" && "$AGORA_HOME" != "$project_runtime" ]]; then
+    err "This lab carries a project-local copied runtime. Re-run this command with AGORA_HOME=\"$AGORA_PROJECT_DIR\" or use the trusted local ./agora wrapper so agent files are refreshed against the project runtime."
+  fi
+}
+
+require_framework() {
+  maybe_use_project_runtime
+  [[ -f "$SCRIPTS/lab-init.sh" && -f "$SCRIPTS/lab-agent.sh" && -f "$SCRIPTS/lab-meeting.sh" ]] \
+    || err "Agora framework files not found in '$AGORA_HOME'. Install it first or run this wrapper from the repository root."
+  require_path_lib
+  # shellcheck source=/dev/null
+  source "$PATH_LIB"
+}
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# Walk up from CWD looking for .agora/lab.yaml; return the .agora/ dir.
+find_project_dir() {
+  local dir="$PWD"
+  while true; do
+    if [[ -f "$dir/.agora/lab.yaml" ]]; then
+      printf '%s' "$dir/.agora"
+      return 0
+    fi
+    [[ "$dir" == "/" ]] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
+# Set AGORA_PROJECT_DIR by discovering the project, or fail.
+require_project() {
+  if [[ -z "${AGORA_PROJECT_DIR:-}" ]]; then
+    AGORA_PROJECT_DIR="$(find_project_dir)" \
+      || err "No .agora/lab.yaml found (searched up from $PWD). Run 'agora init' first."
+  fi
+  maybe_use_project_runtime
+  LAB_YAML="$AGORA_PROJECT_DIR/lab.yaml"
+  export AGORA_HOME AGORA_PROJECT_DIR
+}
+
+require_lab() {
+  require_project
+  [[ -f "$LAB_YAML" ]] || err "No lab.yaml found. Run 'agora init' first."
+}
+
+# Parse all agent names from lab.yaml
+list_agents() {
+  awk '/^agents:/{found=1; next} found && /^[^ ]/{exit} found && /^  [a-zA-Z]/{gsub(/:.*/, ""); gsub(/^  /, ""); print}' "$LAB_YAML"
+}
+
+# Namespaced tmux session: agora-{lab_slug}-{agent_name}
+_cached_lab_slug=""
+_cached_project_hash=""
+_agora_sanitized_lab_slug() {
+  if [[ -n "$_cached_lab_slug" ]]; then
+    printf '%s' "$_cached_lab_slug"
+    return
+  fi
+  local raw_name
+  raw_name=$(awk '/^lab_name:/{
+    val = substr($0, index($0, ":") + 1)
+    gsub(/^[[:space:]]+/, "", val)
+    gsub(/[[:space:]]*#.*$/, "", val)
+    if (val ~ /^"/) { sub(/^"/, "", val); sub(/"$/, "", val) }
+    print val
+  }' "$LAB_YAML" 2>/dev/null)
+  local slug
+  slug=$(printf '%s' "${raw_name:-lab}" | tr '[:upper:]' '[:lower:]' | tr ' _' '-' | sed 's/[^a-z0-9-]//g; s/-\{2,\}/-/g; s/^-//; s/-$//')
+  [[ -n "$slug" ]] || slug="lab"
+  slug="${slug:0:24}"
+  _cached_lab_slug="$slug"
+  printf '%s' "$slug"
+}
+
+_agora_project_hash() {
+  if [[ -n "$_cached_project_hash" ]]; then
+    printf '%s' "$_cached_project_hash"
+    return
+  fi
+  local seed hash
+  seed="${AGORA_PROJECT_DIR:-$PWD}"
+  if [[ -d "$seed" ]]; then
+    seed="$(cd "$seed" && pwd -P)"
+  fi
+  hash=$(printf '%s' "$seed" | cksum | awk '{printf "%08x", $1}')
+  _cached_project_hash="${hash:0:8}"
+  printf '%s' "$_cached_project_hash"
+}
+
+_agora_tmux_session_name() {
+  local agent_name="$1"
+  printf 'agora-%s-%s-%s' "$(_agora_sanitized_lab_slug)" "$(_agora_project_hash)" "$agent_name"
+}
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+# ANSI color helpers (support watch --color)
+_c_reset=$'\033[0m'
+_c_bold=$'\033[1m'
+_c_green=$'\033[32m'
+_c_yellow=$'\033[33m'
+_c_red=$'\033[31m'
+_c_cyan=$'\033[36m'
+_c_dim=$'\033[2m'
+
+# Determine agent session status and return: alive, idle, dead, or missing
+_agent_status() {
+  local agent="$1"
+  local session
+  session=$(_agora_tmux_session_name "$agent")
+  if tmux has-session -t "=$session" 2>/dev/null; then
+    local pane_pid
+    pane_pid=$(tmux list-panes -t "=$session" -F '#{pane_pid}' 2>/dev/null | head -1)
+    if [[ -n "$pane_pid" ]]; then
+      local children
+      children=$(pgrep -P "$pane_pid" 2>/dev/null | wc -l || echo 0)
+      if [[ "$children" -gt 0 ]]; then
+        echo "alive"
+      else
+        echo "idle"
+      fi
+    else
+      echo "alive"
+    fi
+  else
+    if [[ -d "$AGORA_PROJECT_DIR/agents/$agent" ]]; then
+      echo "dead"
+    else
+      echo "missing"
+    fi
+  fi
+}
+
+# Colorize a status word
+_color_status() {
+  local st="$1"
+  case "$st" in
+    alive)   printf '%s%s%s' "$_c_green" "$st" "$_c_reset" ;;
+    idle)    printf '%s%s%s' "$_c_yellow" "$st" "$_c_reset" ;;
+    dead)    printf '%s%s%s' "$_c_red" "$st" "$_c_reset" ;;
+    missing) printf '%s%s%s' "$_c_red" "$st" "$_c_reset" ;;
+    *)       printf '%s' "$st" ;;
+  esac
+}
+
+_yaml_list_from_file() {
+  local file="$1" section="$2"
+  [[ -f "$file" ]] || return 0
+  awk -v section="$section" '
+    $0 == section ":" { in_section=1; next }
+    in_section && /^[^ ]/ { exit }
+    in_section {
+      if ($0 ~ /^  - /) {
+        line = $0
+        sub(/^  - /, "", line)
+        print line
+        next
+      }
+      if ($0 ~ /^  [^ -]/) {
+        exit
+      }
+    }
+  ' "$file"
+}
+
+cmd_list() {
+  require_lab
+
+  local agents
+  agents=$(list_agents)
+  [[ -n "$agents" ]] || { info "No agents registered."; return 0; }
+
+  printf '%s%-18s %-8s  %-14s %s%s\n' "$_c_bold" "NAME" "STATUS" "BACKEND" "MODEL" "$_c_reset"
+
+  for agent in $agents; do
+    local st backend model role
+    st=$(_agent_status "$agent")
+    # Read backend and model from lab.yaml agent fields via awk
+    role=$(awk -v name="$agent" '
+      /^agents:/{found=1; next}
+      found && /^[^ ]/{exit}
+      found && $0 ~ "^  "name":" {agent=1; next}
+      agent && /^  [a-zA-Z]/{exit}
+      agent && /role:/{val=substr($0,index($0,":")+1); gsub(/^[ ]+/,"",val); gsub(/[ ]*#.*/,"",val); if(val~/^"/){sub(/^"/,"",val);sub(/"$/,"",val)}; print val; next}
+    ' "$LAB_YAML")
+    backend=$(awk -v name="$agent" '
+      /^agents:/{found=1; next}
+      found && /^[^ ]/{exit}
+      found && $0 ~ "^  "name":" {agent=1; next}
+      agent && /^  [a-zA-Z]/{exit}
+      agent && /backend:/{val=substr($0,index($0,":")+1); gsub(/^[ ]+/,"",val); gsub(/[ ]*#.*/,"",val); if(val~/^"/){sub(/^"/,"",val);sub(/"$/,"",val)}; print val; next}
+    ' "$LAB_YAML")
+    model=$(awk -v name="$agent" '
+      /^agents:/{found=1; next}
+      found && /^[^ ]/{exit}
+      found && $0 ~ "^  "name":" {agent=1; next}
+      agent && /^  [a-zA-Z]/{exit}
+      agent && /model:/{val=substr($0,index($0,":")+1); gsub(/^[ ]+/,"",val); gsub(/[ ]*#.*/,"",val); if(val~/^"/){sub(/^"/,"",val);sub(/"$/,"",val)}; print val; next}
+    ' "$LAB_YAML")
+    [[ -n "$backend" ]] || backend="claude-code"
+
+    local colored_st
+    colored_st=$(_color_status "$st")
+    local role_suffix=""
+    [[ "$role" == "supervisor" ]] && role_suffix="${_c_dim} (supervisor)${_c_reset}"
+    # Use fixed padding for the status field, then print colored status on top
+    # (ANSI codes are zero-width, so we pad based on raw status length)
+    local pad=""
+    local raw_len=${#st}
+    local i; for ((i=raw_len; i<8; i++)); do pad+=" "; done
+    printf '  %-18s %s%s  %-14s %s%s\n' \
+      "$agent" "$colored_st" "$pad" "$backend" "${model:-—}" "$role_suffix"
+  done
+}
+
+cmd_watch() {
+  require_lab
+  # Use watch with color support; fall back to a simple loop if watch is unavailable
+  if command -v watch >/dev/null 2>&1; then
+    exec watch -n2 --color -- "$0" status
+  else
+    info "(watch not found — using basic refresh loop, Ctrl+C to stop)"
+    while true; do
+      clear
+      cmd_status
+      sleep 2
+    done
+  fi
+}
+
+cmd_init() {
+  require_framework
+  if [[ $# -lt 1 ]]; then
+    err "Usage: agora init \"<research topic>\" [--students N] [--staff N] [--paper-reviewers N] [--force]"
+  fi
+  local topic="$1"; shift
+  export AGORA_HOME
+  export AGORA_PROJECT_DIR="$PWD/.agora"
+  bash "$SCRIPTS/lab-init.sh" --topic "$topic" "$@"
+}
+
+cmd_add() {
+  require_framework
+  require_lab
+  require_mutation_runtime
+  if [[ $# -lt 2 ]]; then
+    err "Usage: agora add <agent-name> <role> [lab-agent options]"
+  fi
+  local name="$1" role="$2"
+  shift 2
+  bash "$SCRIPTS/lab-agent.sh" -add -name "$name" -role "$role" "$@"
+}
+
+cmd_remove() {
+  require_framework
+  require_lab
+  require_mutation_runtime
+  if [[ $# -lt 1 ]]; then
+    err "Usage: agora remove <agent-name>"
+  fi
+  local name="$1"
+  shift
+  bash "$SCRIPTS/lab-agent.sh" -remove -name "$name" "$@"
+}
+
+cmd_start() {
+  require_framework
+  require_lab
+  require_mutation_runtime
+  info "Launching all agents..."
+  bash "$SCRIPTS/lab-agent.sh" -init-all
+  info ""
+  info "Starting watchdog (auto-wake crashed agents)..."
+  info "Press Ctrl+C to stop the watchdog."
+  bash "$SCRIPTS/lab-agent.sh" -watchdog "$@"
+}
+
+cmd_stop() {
+  require_framework
+  require_lab
+  local agents stopped=0
+  agents=$(list_agents)
+  for agent in $agents; do
+    local session
+    session=$(_agora_tmux_session_name "$agent")
+    if tmux has-session -t "=$session" 2>/dev/null; then
+      tmux kill-session -t "=$session"
+      info "Stopped $agent"
+      stopped=$((stopped + 1))
+    fi
+  done
+  if [[ $stopped -eq 0 ]]; then
+    info "No agent sessions running."
+  else
+    info "Stopped $stopped agent session(s)."
+  fi
+}
+
+cmd_status() {
+  require_framework
+  require_lab
+  local kanban_file artifact_dir meeting_caller paper_review_dir
+  kanban_file=$(lab_kanban_file)
+  artifact_dir=$(lab_artifact_dir)
+  meeting_caller=$(lab_decision_maker)
+  paper_review_dir=$(lab_paper_review_dir)
+
+  local lab_name research_topic
+  lab_name=$(awk '/^lab_name:/{
+    val = substr($0, index($0, ":") + 1)
+    gsub(/^[[:space:]]+/, "", val)
+    gsub(/[[:space:]]*#.*$/, "", val)
+    if (val ~ /^"/) { sub(/^"/, "", val); sub(/"$/, "", val) }
+    print val
+  }' "$LAB_YAML")
+  research_topic=$(awk '/^research_topic:/{
+    val = substr($0, index($0, ":") + 1)
+    gsub(/^[[:space:]]+/, "", val)
+    gsub(/[[:space:]]*#.*$/, "", val)
+    if (val ~ /^"/) { sub(/^"/, "", val); sub(/"$/, "", val) }
+    print val
+  }' "$LAB_YAML")
+
+  printf '%s' "$_c_bold"
+  printf '=%.0s' {1..60}; echo
+  printf '  %s\n' "${lab_name:-Agora Lab}"
+  printf '  Topic: %s\n' "${research_topic:-(not set)}"
+  printf '=%.0s' {1..60}
+  printf '%s\n' "$_c_reset"
+  echo
+
+  # --- Agents ---
+  printf '%s%s%s\n' "$_c_bold" "AGENTS" "$_c_reset"
+  echo "------"
+  bash "$SCRIPTS/lab-agent.sh" -health 2>&1 || true
+  echo
+
+  # --- Research task board ---
+  printf '%s%s%s\n' "$_c_bold" "RESEARCH TASK BOARD" "$_c_reset"
+  echo "-------------------"
+  if [[ -f "$kanban_file" ]]; then
+    # Print a compact summary: count tasks per column
+    local backlog=0 inprogress=0 review=0 done=0 section=""
+    while IFS= read -r line; do
+      case "$line" in
+        "## Backlog"*)       section="backlog" ;;
+        "## In Progress"*)   section="inprogress" ;;
+        "## Review"*)        section="review" ;;
+        "## Done"*)          section="done" ;;
+      esac
+      # Count non-header, non-separator table rows with actual content
+      if [[ "$line" == "| T-"* || "$line" == "| "*"T-"* ]]; then
+        case "$section" in
+          backlog)    backlog=$((backlog + 1)) ;;
+          inprogress) inprogress=$((inprogress + 1)) ;;
+          review)     review=$((review + 1)) ;;
+          done)       done=$((done + 1)) ;;
+        esac
+      fi
+    done < "$kanban_file"
+    printf '  Backlog: %d  |  In Progress: %d  |  Review: %d  |  Done: %d\n' \
+      "$backlog" "$inprogress" "$review" "$done"
+
+    # Show active tasks (In Progress and Review)
+    if [[ $inprogress -gt 0 || $review -gt 0 ]]; then
+      echo
+      echo "  Active tasks:"
+      section=""
+      while IFS= read -r line; do
+        case "$line" in
+          "## Backlog"*)       section="backlog" ;;
+          "## In Progress"*)   section="inprogress" ;;
+          "## Review"*)        section="review" ;;
+          "## Done"*)          section="done" ;;
+        esac
+        if [[ ("$section" == "inprogress" || "$section" == "review") && ("$line" == "| T-"* || "$line" == "| "*"T-"*) ]]; then
+          # Extract ID and title from markdown table row
+          local task_id task_title task_assign
+          task_id=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$2); print $2}')
+          task_title=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$3); print $3}')
+          task_assign=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$4); print $4}')
+          local state_label="WIP"
+          [[ "$section" == "review" ]] && state_label="REVIEW"
+          printf '    [%s%s%s] %s — %s (%s)\n' "$_c_cyan" "$state_label" "$_c_reset" "$task_id" "$task_title" "$task_assign"
+        fi
+      done < "$kanban_file"
+    fi
+  else
+    echo "  (no task board found)"
+  fi
+  echo
+
+  # --- Meeting ---
+  printf '%s%s%s\n' "$_c_bold" "MEETING" "$_c_reset"
+  echo "-------"
+  bash "$SCRIPTS/lab-meeting.sh" -caller "$meeting_caller" -status 2>&1 || echo "  (no meeting data)"
+  echo
+
+  # --- Paper reviews ---
+  printf '%s%s%s\n' "$_c_bold" "PAPER REVIEWS" "$_c_reset"
+  echo "-------------"
+  local paper_review_found=0 meta case_id paper_id case_status active_round round_dir resolution_file present_reviews total_reviewers reviewer
+  if [[ -d "$paper_review_dir" ]]; then
+    for meta in "$paper_review_dir"/P*/meta.yaml; do
+      [[ -f "$meta" ]] || continue
+      case_status=$(yaml_scalar_from_file "$meta" "status")
+      [[ "$case_status" == "closed" ]] && continue
+      case_id=$(yaml_scalar_from_file "$meta" "case_id")
+      paper_id=$(yaml_scalar_from_file "$meta" "paper_id")
+      active_round=$(yaml_scalar_from_file "$meta" "active_round")
+      round_dir="$paper_review_dir/$case_id/rounds/$active_round"
+      resolution_file="$round_dir/supervisor-resolution.md"
+      present_reviews=0
+      total_reviewers=0
+      while IFS= read -r reviewer; do
+        [[ -n "$reviewer" ]] || continue
+        total_reviewers=$((total_reviewers + 1))
+        [[ -s "$round_dir/reviews/${reviewer}.md" ]] && present_reviews=$((present_reviews + 1))
+      done < <(_yaml_list_from_file "$meta" "assigned_reviewers")
+      printf '  [%s] %s — %s (round %s, reviews %d/%d' \
+        "$case_status" "$case_id" "${paper_id:-unknown-paper}" "${active_round:-unknown}" "$present_reviews" "$total_reviewers"
+      if [[ -s "$resolution_file" ]]; then
+        printf ', gate written'
+      elif [[ "$case_status" == "active" && $total_reviewers -gt 0 && $present_reviews -eq $total_reviewers ]]; then
+        printf ', gate pending'
+      fi
+      printf ')\n'
+      paper_review_found=1
+    done
+  fi
+  [[ $paper_review_found -eq 1 ]] || echo "  (no active paper review cases)"
+  echo
+}
+
+cmd_meeting() {
+  require_framework
+  require_lab
+  require_mutation_runtime
+  bash "$SCRIPTS/lab-meeting.sh" -caller "supervisor" -auto "$@"
+}
+
+cmd_paper_review() {
+  require_framework
+  require_lab
+  if [[ $# -eq 0 ]]; then
+    set -- -status
+  fi
+  local op="${1:-}"
+  case "$op" in
+    -new|-round|-complete-round) require_mutation_runtime ;;
+  esac
+  bash "$SCRIPTS/lab-paper-review.sh" "$@"
+}
+
+cmd_attach() {
+  if [[ $# -lt 1 ]]; then
+    err "Usage: agora attach <agent-name>
+  Tip: run 'agora list' to see available agents."
+  fi
+  require_lab
+  local name="$1"
+
+  # Validate agent exists in lab.yaml
+  local known
+  known=$(list_agents)
+  if ! echo "$known" | grep -qx "$name"; then
+    printf 'ERROR: Agent '\''%s'\'' not found in lab.yaml.\n' "$name" >&2
+    printf 'Available agents:\n' >&2
+    for a in $known; do printf '  %s\n' "$a" >&2; done
+    exit 1
+  fi
+
+  local session
+  session=$(_agora_tmux_session_name "$name")
+  if ! tmux has-session -t "=$session" 2>/dev/null; then
+    err "Agent '$name' exists but has no running tmux session. Start agents with 'agora start'."
+  fi
+  exec tmux attach -t "=$session"
+}
+
+cmd_log() {
+  require_framework
+  require_lab
+  local kanban_file artifact_dir
+  kanban_file=$(lab_kanban_file)
+  artifact_dir=$(lab_artifact_dir)
+  echo "MEETING HISTORY"
+  echo "---------------"
+  if [[ -f "$AGORA_PROJECT_DIR/shared/MEETING_LOG.md" ]]; then
+    cat "$AGORA_PROJECT_DIR/shared/MEETING_LOG.md"
+  else
+    echo "(no meetings yet)"
+  fi
+  echo
+
+  echo "RECENT COMPLETIONS"
+  echo "------------------"
+  if [[ -f "$kanban_file" ]]; then
+    local section="" found=0
+    while IFS= read -r line; do
+      case "$line" in
+        "## Done"*) section="done" ;;
+        "## "*) [[ "$section" == "done" ]] && break ;;
+      esac
+      if [[ "$section" == "done" && ("$line" == "| T-"* || "$line" == "| "*"T-"*) ]]; then
+        local task_id task_title task_completed task_summary
+        task_id=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$2); print $2}')
+        task_title=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$3); print $3}')
+        task_completed=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$4); print $4}')
+        task_summary=$(echo "$line" | awk -F'|' '{gsub(/^[ ]+|[ ]+$/,"",$5); print $5}')
+        printf '  %s  %s — %s' "$task_completed" "$task_id" "$task_title"
+        [[ -n "$task_summary" ]] && printf '  (%s)' "$task_summary"
+        echo
+        found=1
+      fi
+    done < "$kanban_file"
+    [[ $found -eq 1 ]] || echo "  (no completed tasks)"
+  else
+    echo "  (no task board)"
+  fi
+  echo
+
+  # Recent artifacts
+  echo "RECENT ARTIFACTS"
+  echo "----------------"
+  if [[ -d "$artifact_dir" ]]; then
+    local artifact_found=0
+    while IFS= read -r f; do
+      [[ -f "$f" ]] || continue
+      local relpath="${f#"$AGORA_PROJECT_DIR"/}"
+      local mtime
+      mtime=$(stat -c '%Y' "$f" 2>/dev/null || stat -f '%m' "$f" 2>/dev/null || echo 0)
+      local mdate
+      mdate=$(date -d "@$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+      printf '  %s  %s\n' "$mdate" "$relpath"
+      artifact_found=1
+    done < <({ find "$artifact_dir" -name '*.md' -type f -exec stat -c '%Y %n' {} + 2>/dev/null || find "$artifact_dir" -name '*.md' -type f -exec stat -f '%m %N' {} + 2>/dev/null; } | sort -rn | head -10 | awk '{print $2}')
+    [[ $artifact_found -eq 1 ]] || echo "  (no artifacts)"
+  else
+    echo "  (no artifacts directory)"
+  fi
+}
+
+cmd_help() {
+  cat <<'EOF'
+Agora Lab — Adversarial Multi-Agent Research Framework
+
+Usage: agora <command> [options]
+
+Commands:
+  init <topic> [opts]   Initialize a new research lab
+                            --students N    Number of PhD students (default: 0)
+                            --staff N       Number of research staff (default: 0)
+                            --paper-reviewers N
+                                           Number of paper reviewers (default: 0)
+                            --force         Overwrite existing lab
+
+  add <name> <role>     Add an agent to the current lab
+                          Extra lab-agent options like -direction/-backend/-model are forwarded
+
+  remove <name>         Remove an agent from the current lab
+
+  start                 Launch all agents and start the watchdog
+                           Agents run in tmux sessions with auto-wake on crash
+
+  stop                  Kill all agent tmux sessions
+
+  status                Dashboard: agents, task board, meeting, and paper reviews
+
+  list                  Show agents with live session status (compact)
+
+  watch                 Live-updating dashboard (refreshes every 2 seconds)
+
+  meeting               Run the group meeting protocol interactively
+                           Supervisor advances through all 5 phases
+
+  paper-review [opts]   Manage paper review cases and rounds
+                           Defaults to -status when no option is provided
+
+  attach <name>         Attach to an agent's tmux session
+                           Detach with Ctrl+B then D
+
+  log                   Show meeting history, completed tasks, and recent artifacts
+
+  help                  Show this help message
+
+Examples:
+  agora init "Efficient attention mechanisms for long-context LLMs" --students 3 --staff 1 --paper-reviewers 1
+  agora add student-a student -direction "linear attention"
+  agora paper-review -new paper-001 supervisor "paper-reviewer-1"
+  agora start
+  agora status
+  agora list
+  agora watch
+  agora attach student-a
+  agora meeting
+  agora stop
+
+Underlying scripts (for advanced use):
+  scripts/lab-init.sh       Lab initialization
+  scripts/lab-agent.sh      Agent management (add, remove, init, wake, health, ...)
+  scripts/lab-kanban.sh     Research task board operations
+  scripts/lab-meeting.sh    Meeting protocol (new, phase, auto, status, ...)
+  scripts/lab-paper-review.sh  Paper review case and round state machine
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Main dispatch
+# ---------------------------------------------------------------------------
+
+if [[ $# -lt 1 ]]; then
+  cmd_help
+  exit 0
+fi
+
+command="$1"; shift
+case "$command" in
+  init)     cmd_init "$@" ;;
+  add)      cmd_add "$@" ;;
+  remove)   cmd_remove "$@" ;;
+  start)    cmd_start "$@" ;;
+  stop)     cmd_stop "$@" ;;
+  status)   cmd_status ;;
+  list)     cmd_list ;;
+  watch)    cmd_watch ;;
+  meeting)  cmd_meeting "$@" ;;
+  paper-review) cmd_paper_review "$@" ;;
+  attach)   cmd_attach "$@" ;;
+  log)      cmd_log ;;
+  help|--help|-h)
+            cmd_help ;;
+  *)
+    err "Unknown command: $command. Run 'agora help' for usage."
+    ;;
+esac

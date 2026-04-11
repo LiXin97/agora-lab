@@ -1,0 +1,67 @@
+name: Bug Report
+description: Report a bug in Agora Lab
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Initialize lab: `bash scripts/lab-init.sh --topic "..."`
+        2. Add agent: `bash scripts/lab-agent.sh -add -name student-a -role student`
+        3. Observe error in tmux pane
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Operating System
+      options:
+        - Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: bash_version
+    attributes:
+      label: Bash version
+      description: Output of `bash --version` (first line).
+      placeholder: "e.g., 5.2.15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: Paste any relevant log output or error messages.
+      render: shell
+    validations:
+      required: false

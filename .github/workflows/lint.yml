@@ -1,0 +1,39 @@
+name: ShellCheck Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'hooks/**'
+      - 'agora'
+      - 'install.sh'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'hooks/**'
+      - 'agora'
+      - 'install.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Lint hooks
+        run: shellcheck hooks/*.sh
+
+      - name: Lint CLI
+        run: shellcheck agora install.sh

@@ -1,0 +1,57 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash ../../scripts/lab-kanban.sh -caller {{AGENT_NAME}} -*)",
+      "Bash(bash ../../scripts/lab-meeting.sh -caller {{AGENT_NAME}} -*)",
+      "Bash(bash ../../scripts/lab-poll.sh {{AGENT_NAME}}*)",
+      {{SKILL_ALLOWS}}
+      "Read({{KANBAN_FILE_REL}})",
+      "Read({{ARTIFACT_DIR_REL}}**)",
+      "Read({{MESSAGE_DIR_REL}}**)",
+      "Read({{MEETING_DIR_REL}}**)",
+      "Read(../../LAB.md)",
+      "Read(../../lab.yaml)",
+      "Read(memory.md)",
+      "Write(memory.md)",
+      "Write({{MESSAGE_DIR_REL}}**)",
+      "Write({{MEETING_DIR_REL}}**/judgments/{{AGENT_NAME}}.md)",
+      "Write({{MEETING_DIR_REL}}**/critiques/{{AGENT_NAME}}_on_all.md)",
+      "Edit(memory.md)",
+      "Edit({{MESSAGE_DIR_REL}}**)",
+      "Edit({{MEETING_DIR_REL}}**/judgments/{{AGENT_NAME}}.md)",
+      "Edit({{MEETING_DIR_REL}}**/critiques/{{AGENT_NAME}}_on_all.md)"
+    ],
+    "deny": [
+      "Bash(*)",
+      "Skill(*)",
+      "Write(../../agents/**)",
+      "Edit(../../agents/**)",
+      "Write({{KANBAN_FILE_REL}})",
+      "Edit({{KANBAN_FILE_REL}})"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../hooks/workspace-guard.sh \"{{AGENT_NAME}}\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../hooks/kanban-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

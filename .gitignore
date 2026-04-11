@@ -1,0 +1,48 @@
+# Agents
+agents/
+
+# Shared runtime data
+shared/KANBAN.md
+shared/messages/
+shared/meetings/
+shared/artifacts/
+shared/paper-reviews/
+shared/research-wiki/
+shared/MEETING_LOG.md
+
+# Keep directory structure
+!agents/.gitkeep
+!shared/messages/.gitkeep
+!shared/meetings/.gitkeep
+!shared/artifacts/.gitkeep
+!shared/paper-reviews/.gitkeep
+!shared/research-wiki/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+*.tmp.*
+*.lock
+*.swp
+*~
+
+.worktrees/
+
+.claude/
+
+# Internal docs kept locally in this checkout
+docs/internal/

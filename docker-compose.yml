@@ -1,0 +1,18 @@
+services:
+  agora-lab:
+    build: .
+    container_name: agora-lab
+    working_dir: /workspace
+    volumes:
+      # Persist the full project so .agora/ is created on the host.
+      - ./:/workspace
+    environment:
+      AGORA_TOPIC: ${AGORA_TOPIC:-Efficient attention mechanisms for long-context LLMs}
+      AGORA_COPY_FRAMEWORK: "1"
+      AGORA_PROJECT_DIR: /workspace/.agora
+    # Init-only helper container. Create .agora/ on the host, then run agents where your
+    # authenticated backend CLI is available.
+    # docker compose run agora-lab bash /opt/agora-lab/scripts/lab-init.sh --topic "$AGORA_TOPIC"
+    command: ["bash", "/opt/agora-lab/scripts/lab-init.sh", "--help"]
+    stdin_open: true
+    tty: true
