@@ -1,0 +1,24 @@
+{
+  "name": "@agora-lab/server",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@agora-lab/core": "workspace:*",
+    "chokidar": "^4.0.0",
+    "proper-lockfile": "^4.1.2",
+    "ws": "^8.18.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/ws": "^8.5.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

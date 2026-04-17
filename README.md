@@ -5,17 +5,18 @@
 <!-- Logo placeholder — replace with actual logo when available -->
 <h1>Agora Lab</h1>
 
-**Shell-Native Multi-Agent Research Automation for LLM Labs**
+**Multi-Agent Research Orchestration for LLM Labs**
 
-Adversarial lab meetings, paper-review rounds, auditable Markdown workflows, and workspace isolation.
+Adversarial lab meetings, paper-review workflows, a dashboard-first web workbench with an optional pixel-art Lab View, and auditable Markdown workflows.
 
-`Claude / Codex / Copilot / Gemini · Bash CLI · Supervisor / Students / Research Staff / Paper Reviewers`
+`Claude / Codex / Copilot / Gemini · TypeScript · pnpm monorepo · Supervisor / Students / Research Staff / Paper Reviewers`
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-![Shell](https://img.shields.io/badge/Shell-Bash%204.0%2B-green.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.5%2B-blue.svg)
+![Node](https://img.shields.io/badge/Node.js-18%2B-green.svg)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-brightgreen.svg)
 
-[Quick Start](#quick-start) · [Tutorial](docs/tutorial.md) · [Examples](examples) · [Architecture](#architecture)
+[Quick Start](#quick-start) · [Web Dashboard](#web-dashboard) · [Tutorial](docs/tutorial.md) · [Examples](examples) · [Architecture](#architecture)
 
 </div>
 
@@ -25,10 +26,20 @@ Adversarial lab meetings, paper-review rounds, auditable Markdown workflows, and
 
 ## What is Agora Lab?
 
-Agora Lab is a shell-native framework for orchestrating supervisor, student, research-staff, and paper-reviewer LLM agents into an auditable AI research lab. Its core quality mechanism is a two-stage adversarial loop: structured research meetings refine directions through debate, then dedicated paper-review rounds gate submission readiness. Every interaction flows through Markdown files, a shared task board, and per-agent workspaces, so the research process stays inspectable from first literature survey to final paper.
+Agora Lab is a TypeScript framework for orchestrating supervisor, student, research-staff, and paper-reviewer LLM agents into an auditable AI research lab. Its core quality mechanism is a two-stage adversarial loop: structured research meetings refine directions through debate, then dedicated paper-review rounds gate submission readiness. Every interaction flows through Markdown files, a shared task board, and per-agent workspaces, so the research process stays inspectable from first literature survey to final paper.
+
+The project is structured as a **pnpm monorepo** with four packages:
+
+| Package | Description |
+|---|---|
+| `packages/core` | Core domain logic — kanban, meetings, agents, config, templates |
+| `packages/cli` | `agora` CLI built with Commander.js — init, start, stop, agent/meeting/kanban subcommands |
+| `packages/server` | WebSocket server — watches `.agora/` for file changes via chokidar, broadcasts events, handles client commands |
+| `packages/web` | Dashboard-first web app — React panels for agents/kanban/messages plus a secondary Canvas-based Lab View |
 
 ## News
 
+- **[2026-04-16]** Dashboard refresh — analyst workbench shell by default, with the original pixel lab preserved as a secondary Lab View
 - **[2026-04-10]** Open-source launch — Agora Lab is now available publicly on GitHub
 
 ## Architecture
@@ -82,19 +93,36 @@ graph TD
 
 ## Quick Start
 
+The examples below assume the `agora` CLI is on your `PATH`. When running from a local clone, you can either link `packages/cli` globally yourself or replace `agora` with `node /path/to/agora-lab/packages/cli/dist/index.js`.
+
 ```bash
-# 1. Install (one-time, installs to ~/.agora/)
-curl -fsSL https://raw.githubusercontent.com/LiXin97/agora-lab/main/install.sh | bash
+# 1. Clone and build
+git clone https://github.com/LiXin97/agora-lab.git
+cd agora-lab
+pnpm install
+pnpm build
 
 # 2. Initialize a lab in any project directory
-cd your-project
-agora init "Efficient attention mechanisms for long-context LLMs" --students 2 --staff 1 --paper-reviewers 1
+cd /path/to/your-project
+agora init "Long Context Lab" -t "Efficient attention mechanisms for long-context LLMs"
 
-# 3. Launch all agents + watchdog
+# 3. Add agents (repeat as needed)
+agora agent add student-a -r student
+agora agent add student-b -r student
+agora agent add research-staff -r research-staff
+agora agent add paper-reviewer -r paper-reviewer
+
+# 4. Bootstrap runtime state, launch agent tmux sessions, and start the watchdog
 agora start
+# agora start (a) seeds starter tasks once when the board is empty,
+# (b) launches each configured agent in a dedicated tmux session, and
+# (c) starts a runtime watchdog tmux session that automatically injects
+#     kickoff and dispatch prompts into active agent sessions.
+# Use `agora kanban assign` to dispatch an existing task to an agent.
+# Human assignment remains the intentional control point for work dispatch.
 
-# 4. Check the dashboard
-agora status
+# 5. Open the web dashboard
+agora dev
 ```
 
 This creates a `.agora/` directory in your project (like `git init` creates `.git/`):
@@ -104,50 +132,63 @@ your-project/
 ├── .agora/
 │   ├── lab.yaml              # Lab config (git-committable)
 │   ├── LAB.md                # Lab rules (git-committable)
-│   ├── agents/               # Per-agent workspaces (gitignored)
+│   ├── runtime.json          # Runtime bootstrap state (auto-managed)
+│   ├── agents/               # Per-agent workspaces
 │   │   ├── supervisor/
 │   │   ├── student-a/
 │   │   ├── staff-a/
 │   │   └── paper-reviewer-1/
-│   ├── shared/               # Shared artifacts, messages, meetings, paper reviews (gitignored)
-│   ├── scripts → ~/.agora/scripts  # Symlink to global install
-│   ├── hooks → ~/.agora/hooks     # Symlink to global install
-│   ├── templates → ~/.agora/templates  # Symlink to global install
-│   └── skills → ~/.agora/skills       # Symlink to global install
+│   └── shared/               # Shared artifacts, messages, meetings, paper reviews
+│       ├── KANBAN.md
+│       ├── artifacts/
+│       ├── meetings/
+│       ├── paper-reviews/
+│       └── messages/
 └── .gitignore                # Auto-updated
 ```
 
-Or build the same lab manually with the underlying scripts:
+### Web Dashboard
+
+Launch the dashboard-first web UI:
 
 ```bash
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-init.sh --topic "Efficient attention mechanisms for long-context LLMs"
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-agent.sh -add -name student-a -role student -direction "linear attention"
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-agent.sh -add -name student-b -role student -direction "sparse attention"
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-agent.sh -add -name staff-a -role research-staff
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-agent.sh -add -name paper-reviewer-1 -role paper-reviewer
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-agent.sh -init-all
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-meeting.sh -caller supervisor -new
-AGORA_PROJECT_DIR="$PWD/.agora" bash ~/.agora/scripts/lab-paper-review.sh -new draft-long-context-v1 student-a "paper-reviewer-1"
+agora dev      # development: websocket server + Vite frontend
+agora web      # production-style: serves built frontend from packages/web/dist
 ```
 
-### Docker Quickstart
+Open the URL printed in the terminal. `agora dev` starts the realtime server on the requested port and a Vite frontend on a second local port.
 
-```bash
-docker build -t agora-lab .
-docker run -it --rm \
-  -e AGORA_COPY_FRAMEWORK=1 \
-  -e AGORA_PROJECT_DIR=/workspace/.agora \
-  -v "$(pwd):/workspace" \
-  -w /workspace \
-  agora-lab bash /opt/agora-lab/scripts/lab-init.sh \
-    --topic "Efficient attention mechanisms for long-context LLMs" \
-    --students 2 --staff 1 --paper-reviewers 1
-```
+<p align="center">
+  <img src="docs/assets/readme/web-dashboard.png" alt="Web Dashboard" width="80%" />
+</p>
 
-> The Docker image is an **init-only helper** for creating `.agora/` state on the host.
-> It copies the required runtime files (`scripts/`, `hooks/`, `templates/`, and `skills/`) into the host project so the generated lab does not depend on container-only paths.
-> To use an installed global `agora` CLI against that copied runtime, point it there explicitly: `AGORA_HOME="$PWD/.agora" agora status`.
-> Run agent backends on the host (or in a separately provisioned container) after initialization.
+The default experience is an **Analyst Workbench**:
+
+- **Left** — agent roster and status summary
+- **Center** — kanban workbench for add / move / assign
+- **Right** — recent messages and meeting controls
+- **Bottom** — decision log and system health
+
+A **top app chrome** sits above both views and provides:
+- lab identity and connection health indicator
+- **Dashboard / Lab View** tabs to switch the primary surface
+- **System / Light / Dark** theme selector
+
+**Interactive features:**
+
+| Shortcut | Action |
+|---|---|
+| Dashboard | Add tasks, move status, assign agents, create / advance meetings, inspect decisions and health |
+| Agent click (dashboard) | Focus tasks and messages for the selected agent |
+| Chrome tab | Switch between Dashboard and Lab View |
+| `K` or whiteboard (**Lab View**) | Open kanban overlay |
+| `M` or meeting table (**Lab View**) | Open meeting overlay |
+| Click agent (**Lab View**) | Open agent sidebar |
+| Drag / scroll (**Lab View**) | Pan and zoom camera |
+| Toolbar `R` (**Lab View**) | Reset camera to center |
+| `Escape` | Close overlays and clear selection |
+
+**Lab View** is a **low-motion monitoring surface** — agents occupy fixed positions and update their state (working / meeting / review) as the lab progresses, but continuous movement animation is not the normal experience. The canvas is no longer the primary control surface.
 
 > **[Full Tutorial](docs/tutorial.md)** — End-to-end walkthrough with example agent outputs from a complete research session.
 >
@@ -161,12 +202,11 @@ docker run -it --rm \
 | **Meeting Protocol** | 5-phase structured | -- | Round-robin chat | -- | -- | Tournament |
 | **Research Pipeline** | 7-step research loop + paper-review gate | SOP-driven workflows | Flexible chains | Task pipelines | End-to-end papers | Multi-step reasoning |
 | **Multi-Backend** | Claude / Codex / Copilot / Gemini | OpenAI-centric | Multi-model | LLM-agnostic | OpenAI | Gemini |
+| **Web Dashboard** | Dashboard-first workbench + pixel Lab View | -- | -- | -- | -- | Cloud UI |
 | **Workspace Isolation** | Hook-enforced per-agent | Shared memory | Shared state | Shared state | Single agent | Cloud-managed |
 | **File-Based Audit Trail** | Full Markdown trail | Code files | Logs | Logs | LaTeX outputs | Internal |
-| **Shell-Native** | Pure Bash (no Python core) | Python | Python | Python | Python | Cloud service |
-| **Role-Based Access** | Supervisor / Student / Research Staff / Paper Reviewer RBAC | Role assignment | Agent roles | Role delegation | -- | -- |
-
-Each framework has strengths: MetaGPT excels at SOP-driven software workflows; AutoGen provides flexible multi-modal agent conversations; CrewAI offers a simple, clean API for agent orchestration; AI Scientist produces end-to-end research papers autonomously; Co-Scientist uses Elo-based tournament ranking for idea selection. Agora Lab's differentiator is **adversarial structure** — the research loop forces student ideas through structured staff criticism, and the paper-review loop adds an explicit pre-submission gate for novelty, evidence, and claim discipline.
+| **Stack** | TypeScript + React + Canvas 2D | Python | Python | Python | Python | Cloud service |
+| **Role-Based Access** | Supervisor / Student / Staff / Reviewer RBAC | Role assignment | Agent roles | Role delegation | -- | -- |
 
 ## How It Works
 
@@ -205,38 +245,28 @@ Submit or revise
 | **Research Staff** | Join regular research-loop meetings, stress-test scope/evidence/claims, provide lab-level scientific judgment | Any supported backend; defaults to Claude Code. Persona is a senior postdoc or junior faculty profile with strong mentoring and evaluation instincts. |
 | **Paper Reviewer** | Run dedicated paper-review rounds focused on novelty, rigor, evidence, and submission readiness | Any supported backend; defaults to Claude Code. Persona is a top-tier critical evaluator with an explicit review lens and achievements. |
 
-## Skill Architecture
-
-The lab uses a layered skill system:
-
-- **Shared reference docs** available to all roles
-- **Shared core workflow skills** (research task board, meetings, handoff)
-- **Role-specific overlay skills** tailored to each role's responsibilities
-
-Supervisor, student, research-staff, and paper-reviewer workspaces load different workflow skills by default. The generated role skill stacks in `lab.yaml` are the canonical source of truth.
-
 ## Key Features
 
+- **Dashboard-first web UI**: Analyst workbench for agents, kanban, meetings, recent messages, decisions, and system health
+- **Secondary Lab View**: Keep the original pixel-art canvas for spatial exploration and overlays
 - **Dynamic scaling**: Add any number of students, research staff, and paper reviewers at runtime
-- **Multi-runtime**: Every role can run on Claude Code, Codex, Copilot, or Gemini; Codex/Copilot/Gemini remain explicit unsafe opt-in
+- **Multi-runtime**: Every role can run on Claude Code, Codex, Copilot, or Gemini
 - **Persona diversity**: Each agent carries a visible MBTI, elite background, notable results, and a role-specific research lens
 - **Adversarial research meetings**: 5-phase protocol with student cross-critique and research-staff judgment
-- **Separate paper review gate**: Dedicated `lab-paper-review.sh` workflow for pre-submission review rounds
-- **Richer meeting context**: Agenda and status surfaces show participant backend and persona summaries before discussion starts
+- **Separate paper review gate**: Dedicated paper-review workflow for pre-submission review rounds
 - **Tree search**: Multiple students explore different directions simultaneously; supervisor prunes/merges
 - **File-based communication**: All agent interaction through structured Markdown files
-- **Research task board**: Markdown-based task tracking with flock locking for concurrency
+- **Research task board**: Markdown-based task tracking with concurrency-safe file operations
 - **Workspace isolation**: Hooks enforce per-agent workspace boundaries
-- **Role-based access control**: Launched agents bind runtime identity on Research task board and meeting operations
-- **Skill library**: Shared, role-based skills symlinked into each agent
-- **Session persistence**: Per-agent `memory.md` for cross-session context
+- **Role templates (TS-native)**: `agora init` and `agora agent add` write per-agent `CLAUDE.md` prompts from TypeScript-era Markdown templates — no shell stubs; each template includes a session-start checklist and current CLI commands
+- **Bidirectional WebSocket**: Browser sends commands (kanban, meeting) to server; server watches files and broadcasts updates
 
 ## Group Meeting Protocol
 
 Meetings are the core adversarial mechanism for the regular research loop — modeled after real lab group meetings:
 
 1. **PREPARE**: Students write perspectives in `perspectives/`; research staff write judgments in `judgments/`
-2. **CROSS-READ**: Everyone reads all perspectives, then acknowledges completion with `lab-meeting.sh -caller <name> -ack-read`
+2. **CROSS-READ**: Everyone reads all perspectives, then acknowledges completion
 3. **CHALLENGE**: Students critique each other (N x N), while research staff apply broader scientific judgment to scope, evidence, and positioning
 4. **RESPOND**: Each participant addresses critiques targeting their work
 5. **DECISION**: Supervisor reads everything and decides: `CONTINUE` | `PIVOT` | `MERGE` | `SPLIT`
@@ -245,13 +275,16 @@ Paper reviewers do **not** participate in these regular meetings; they operate t
 
 ## Paper Review Workflow
 
-Once a student has a paper draft worth external scrutiny, open a paper-review case:
+Paper-review artifacts live under `shared/paper-reviews/`, and the example snapshot in `examples/` shows the intended packet / round structure.
 
-1. **Open a case**: `lab-paper-review.sh -new <paper-id> <owner> <reviewers>`
-2. **Collect round artifacts** under `shared/paper-reviews/<case-id>/rounds/Rn/`
-3. **After all assigned reviews are present, write the supervisor resolution** in `supervisor-resolution.md`
-4. **Complete the round** with `lab-paper-review.sh -complete-round <case-id>`
-5. If the decision is not submission-ready, **open the next round** with `lab-paper-review.sh -round <case-id>`
+The current TypeScript CLI focuses on **lab initialization, agent management, kanban, meetings, and the web UI**. A dedicated `paper-review` subcommand is **not yet surfaced** in this rewrite, so paper-review case management is presently file/workflow driven.
+
+Use the same directory conventions when modeling a review cycle:
+
+1. Create a case directory under `shared/paper-reviews/<case-id>/`
+2. Store per-round reviewer outputs under `rounds/Rn/reviews/`
+3. Write the supervisor synthesis in `supervisor-resolution.md`
+4. Repeat rounds until the draft is submission-ready
 
 Each case keeps a durable packet, round history, assigned reviewers, and final status.
 
@@ -270,75 +303,65 @@ Each student follows a 7-step pipeline:
 ## Commands Reference
 
 ```bash
-# Unified CLI (recommended)
-agora init "topic" [--students N] [--staff N] [--paper-reviewers N]  # Initialize lab in current dir
-agora start                                         # Launch agents + watchdog
-agora stop                                          # Stop all agent sessions
-agora status                                        # Dashboard overview
-agora list                                          # Compact agent status table
-agora watch                                         # Live dashboard (auto-refresh)
-agora meeting                                       # Run meeting interactively
-agora attach <name>                                 # Attach to agent's tmux
-agora log                                           # Meeting history + completions
+# Core commands
+agora init [name] -t <topic>                        # Non-interactive init when topic is provided; otherwise prompts
+agora start                                         # Seed starter tasks (once), launch agent tmux sessions, start runtime watchdog
+agora stop                                          # Stop every tmux session owned by this lab: agents, runtime watchdog, and any stale orphans
+agora status                                        # Show lab status (agent states: offline/ready/assigned/working/meeting/review; kanban: todo/assigned/in_progress/review/done)
+agora dev [-p port]                                 # WebSocket server + Vite dev server
+agora web [-p port]                                 # Serve the built frontend from packages/web/dist
 
-# Agent management (advanced)
-lab-agent.sh -add -name <n> -role <role> [-backend <cli>] [-model <m>] [-direction "..."]
-             [-preset <id>] [-mbti <type>] [-background "..."] [-results "..."]
-lab-agent.sh -remove -name <n>
-lab-agent.sh -init -name <n>          # Launch in tmux
-lab-agent.sh -init-all                # Launch all
-lab-agent.sh -list                    # Show all agents
-lab-agent.sh -wake -name <n>          # Resume crashed session
-lab-agent.sh -send -name <n> -from <sender> -message "..."
-# valid roles: supervisor | student | research-staff | paper-reviewer
+# Agent management
+agora agent add <name> -r <role>                    # Add agent (supervisor|student|research-staff|paper-reviewer)
+agora agent remove <name>                           # Remove agent
+agora agent list                                    # List all agents
 
-# Research task board (all operations require -caller <name>)
-lab-kanban.sh -caller <name> -new -title "..." -assign <agent> -priority <P0-P3>
-lab-kanban.sh -caller <name> -start -id <ID>
-lab-kanban.sh -caller <name> -submit -id <ID> -artifacts "path1,path2"
-lab-kanban.sh -caller <name> -approve -id <ID>
-lab-kanban.sh -caller <name> -reject -id <ID> -reason "..."
-lab-kanban.sh -caller <name> -done -id <ID> -summary "..."
-lab-kanban.sh -caller <name> -status
+# Meeting management
+agora meeting new                                   # Create a new meeting
+agora meeting status [id]                           # Show meeting status
+agora meeting advance <id>                          # Advance meeting phase
 
-# Research meetings (all operations require -caller <name>; only supervisor can create/advance/complete)
-lab-meeting.sh -caller supervisor -new       # Create regular research-loop meeting
-lab-meeting.sh -caller <name> -phase <name>  # Advance phase
-lab-meeting.sh -caller <name> -ack-read      # Record CROSS-READ completion
-lab-meeting.sh -caller <name> -complete      # Mark meeting completed
-lab-meeting.sh -caller <name> -auto          # Run all phases interactively
-lab-meeting.sh -caller <name> -status        # Show current meeting
-
-# Paper review cases
-lab-paper-review.sh -new <paper-id> <owner> "paper-reviewer-1 paper-reviewer-2"
-lab-paper-review.sh -new paper-001 student-a "paper-reviewer-1"
-lab-paper-review.sh -round <case-id>
-lab-paper-review.sh -complete-round <case-id>
-lab-paper-review.sh -status
+# Kanban board
+agora kanban list                                   # List all tasks
+agora kanban add -T <title> [-p P0-P3] [-a agent]  # Add a task
+agora kanban assign -i <id> -a <agent>              # Assign an existing task to an agent (todo → assigned)
+agora kanban move -i <id> -s <status>               # Move task (todo|assigned|in_progress|review|done)
 ```
 
-## Security Model
+## Project Structure
 
-Agora Lab uses a layered defense for multi-agent isolation:
-
-1. **Runtime-bound caller identity**: Launched agents export their bound identity into the tmux session, and `lab-kanban.sh` / `lab-meeting.sh` reject mismatched callers
-2. **Claude Code hooks**: `workspace-guard.sh` (PreToolUse) restricts writes to role-appropriate files; `kanban-guard.sh` (PostToolUse) validates Research task board format in `KANBAN.md`
-3. **Permission patterns**: `settings.json` restricts which Bash commands, Read/Write/Edit paths each agent can access
-4. **Safe defaults**: New labs default every role to a safe backend choice, and unsandboxed Codex/Copilot launches are disabled unless `security.allow_unsafe_backends: true`
-
-**Known limitation**: If you explicitly enable unsafe backends, Codex/Copilot still launch as plain CLI processes in tmux. They remain outside Claude's hook/permission enforcement, so only opt in when you accept that loss of isolation or provide your own container sandbox.
-
-**Execution note**: The safe default Claude student template no longer allows arbitrary `python` / `pip` shell commands. For local experiment execution, use a separately sandboxed runner or explicitly opt into an unsafe backend.
-
-**Persona note**: New agents persist `persona_preset`, `mbti`, `background`, and `notable_results` in `lab.yaml`. If an older agent entry lacks those fields, status views, template rendering, and meetings derive a stable default persona from the role-specific preset catalog under `templates/personas/`.
+```
+agora-lab/
+├── packages/
+│   ├── core/           # Domain logic (kanban, meetings, agents, config)
+│   ├── cli/            # agora CLI (Commander.js)
+│   ├── server/         # WebSocket server (chokidar file watcher + WS)
+│   └── web/            # Dashboard-first web UI + secondary Lab View
+│       └── src/engine/ # Tile map, sprites, pathfinding, layout, renderer
+├── scripts/            # Legacy shell helpers retained for compatibility/reference
+├── hooks/              # Claude Code hooks (workspace-guard, kanban-guard)
+├── templates/          # Agent persona templates
+├── skills/             # Role-specific skill definitions
+└── examples/           # Sample lab outputs
+```
 
 ## Requirements
 
-- Bash 4.0+
-- tmux
-- jq or python3 (for secure hook JSON parsing)
+- **Node.js 18+**
+- **pnpm 8+**
+- tmux (for agent session management)
 - One or more of: [Claude Code](https://claude.ai/code), [Codex CLI](https://github.com/openai/codex), [Copilot CLI](https://docs.github.com/copilot), [Gemini CLI](https://github.com/google-gemini/gemini-cli)
-- `flock` (standard on Linux, `brew install flock` on macOS)
+
+## Development
+
+```bash
+git clone https://github.com/LiXin97/agora-lab.git
+cd agora-lab
+pnpm install
+pnpm build        # Build all packages
+pnpm test         # Run all tests (vitest)
+pnpm lint         # Type-check (tsc --noEmit)
+```
 
 ## Contributing
 

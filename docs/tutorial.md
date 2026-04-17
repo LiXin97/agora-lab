@@ -1,103 +1,189 @@
 # End-to-End Tutorial: Running Your First Research Session
 
-This tutorial walks through the **current** Agora Lab workflow:
+This tutorial matches the **current TypeScript CLI and web app**. It focuses on the supported command surface today:
 
-- **research-staff** participates in regular group meetings as an internal scientific judge
-- **paper-reviewer** appears only in the separate paper-review loop after the supervisor believes the work is close to submission
+- lab initialization
+- agent management
+- kanban workflow
+- meetings
+- the dashboard-first web UI
 
-You will set up a lab with one supervisor, two students, one research staff member, and one paper reviewer, then inspect the files Agora creates at each stage.
+The repository still models `paper-reviewer` as a first-class role, and the `examples/` directory shows the intended paper-review file layout, but dedicated `paper-review` CLI commands are **not yet exposed** in this rewrite.
 
 ---
 
 ## Prerequisites
 
-- Bash 4.0+, tmux, jq (or python3), flock
+- Node.js 18+
+- pnpm 8+
+- tmux (used by `agora start`)
 - At least one AI backend installed: [Claude Code](https://claude.ai/code), [Codex CLI](https://github.com/openai/codex), [Copilot CLI](https://docs.github.com/copilot), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - The Agora Lab repository cloned locally
 
 ```bash
 git clone https://github.com/LiXin97/agora-lab.git
 cd agora-lab
+pnpm install
+pnpm build
+```
+
+The examples below assume `agora` is on your `PATH`. If you are running directly from a local clone, replace `agora` with:
+
+```bash
+node /path/to/agora-lab/packages/cli/dist/index.js
 ```
 
 ---
 
 ## Step 1: Initialize the Lab
 
-The simplest path is the unified CLI:
+Create a new lab inside the project you want to orchestrate:
 
 ```bash
-./agora init "Efficient attention mechanisms for long-context LLMs" \
-  --students 2 \
-  --staff 1 \
-  --paper-reviewers 1
+cd /path/to/your-project
+agora init "Long Context Lab" -t "Efficient attention mechanisms for long-context LLMs"
 ```
 
-This creates a `.agora/` runtime in your project with:
+This creates a `.agora/` runtime with:
 
 - `.agora/lab.yaml` and `.agora/LAB.md`
-- generated agents: `supervisor`, `student-a`, `student-b`, `staff-a`, `paper-reviewer-1`
-- `.agora/shared/KANBAN.md` seeded with the supervisor's first task
-- symlinks into the installed runtime (`scripts/`, `hooks/`, `templates/`, `skills/`)
+- a default `supervisor`
+- `.agora/shared/KANBAN.md`
+- directories for `messages/`, `artifacts/`, `meetings/`, and `paper-reviews/`
 
-If you want to call the underlying script directly:
+If you omit the topic, `agora init` falls back to an interactive setup flow.
+
+---
+
+## Step 2: Add Agents
+
+Add the agents you want in this session:
 
 ```bash
-AGORA_PROJECT_DIR="$PWD/.agora" bash scripts/lab-init.sh \
-  --topic "Efficient attention mechanisms for long-context LLMs" \
-  --students 2 \
-  --staff 1 \
-  --paper-reviewers 1
+agora agent add student-a -r student
+agora agent add student-b -r student
+agora agent add research-staff -r research-staff
+agora agent add paper-reviewer -r paper-reviewer
+agora agent list
+```
+
+The most important role distinction is:
+
+- `research-staff` participates in **regular research meetings**
+- `paper-reviewer` is reserved for **submission-readiness review workflows**
+
+---
+
+## Step 3: Start the Lab and Inspect Status
+
+`agora start` does four things when the board is empty:
+1. Bootstraps the runtime state file (`.agora/runtime.json`).
+2. Seeds a set of starter tasks in `KANBAN.md` — one per research pipeline step — so the board is ready to assign.
+3. Launches all configured agents in dedicated tmux sessions.
+4. Starts a **runtime watchdog** tmux session that polls messages, KANBAN.md, and meetings, then automatically injects actionable kickoff and dispatch prompts into active agent sessions.
+
+```bash
+agora start
+agora status
+```
+
+`agora status` now reports:
+
+- the current lab name and topic
+- each configured agent with its **runtime state**: `offline / ready / assigned / working / meeting / review`
+- a kanban rollup with the full task-flow counts: `Todo / Assigned / In Progress / Review / Done`
+
+> **Assignment is the control point.** Agents do not auto-claim tasks after `start`. You (or the supervisor agent) must move a task to `assigned` for an agent to pick it up. This keeps dispatch intentional and auditable.
+
+To tear everything down — agents, the watchdog, and any stale orphan sessions — run:
+
+```bash
+agora stop
 ```
 
 ---
 
-## Step 2: Add Agents Manually (Optional)
+## Step 4: Open the Web UI
 
-If you initialized without counts, add agents explicitly:
-
-```bash
-./agora add student-a student -direction "Linear attention variants"
-./agora add student-b student -direction "Sparse attention and local-global hybrids"
-./agora add staff-a research-staff
-./agora add paper-reviewer-1 paper-reviewer
-```
-
-Check the roster:
+For day-to-day development, use:
 
 ```bash
-./agora list
+agora dev
 ```
 
-The important distinction is role semantics:
+This starts:
 
-- `research-staff` joins **regular meetings**
-- `paper-reviewer` stays outside meetings and only enters **paper-review cases**
+- the realtime server on the requested port
+- a Vite frontend on a second local port
+
+For a built, single-port frontend, use:
+
+```bash
+agora web
+```
+
+### What you will see
+
+The default UI is a **dashboard-first analyst workbench**:
+
+- **Left:** agent roster and status summary
+- **Center:** kanban workbench
+- **Right:** recent messages and meeting controls
+- **Bottom:** decision log and system health
+
+A **top app chrome** sits above both views and provides:
+- lab identity and connection health indicator
+- **Dashboard / Lab View** tabs — click to switch the primary surface
+- **System / Light / Dark** theme selector
+
+Use the chrome tabs to switch between the dashboard and the pixel-art **Lab View**.
+
+### Lab View controls
+
+**Lab View** is a **low-motion monitoring surface**. Agents reflect their current state (working / meeting / review) but do not animate continuously. It is useful for a spatial at-a-glance overview and for overlay-based inspection:
+
+- `K` or whiteboard: open the kanban overlay
+- `M` or meeting table: open the meeting overlay
+- click an agent: open the agent sidebar
+- drag / scroll: pan and zoom the camera
+- toolbar `R`: reset the camera
+- `Escape`: close overlays and clear selection
 
 ---
 
-## Step 3: Start the Lab
+## Step 5: Drive the Shared Workflow
 
-Launch all agents and the watchdog:
+You can manage kanban and meetings either from the web UI or from the CLI.
 
-```bash
-./agora start
-./agora status
-```
-
-Useful runtime commands:
+### Kanban
 
 ```bash
-./agora list
-./agora watch
-./agora attach student-a
+# Add tasks to the todo queue (unassigned)
+agora kanban add -T "Run sparse attention baseline" -p P1
+agora kanban add -T "Compare with linear attention" -p P2
+agora kanban list
+# Dispatch a task to a specific agent (todo → assigned).
+# The runtime watchdog will inject a prompt into the agent's tmux session.
+agora kanban assign -i 001 -a student-a
+# Alternatively, move status manually — assign first, then mark in-progress
+agora kanban move -i 001 -s assigned
+# Human records that the agent has started work: assigned → in_progress
+agora kanban move -i 001 -s in_progress
 ```
 
-At this point the paper reviewer is usually idle. The normal loop begins with student work, supervisor coordination, and group meetings.
+### Meetings
+
+```bash
+agora meeting new
+agora meeting status
+agora meeting advance mtg-...
+```
+
+`agora meeting new` automatically includes the currently configured agents and creates a meeting record under `.agora/shared/meetings/`.
 
 ---
 
-## Step 4: Understand the Shared State
+## Step 6: Understand the Shared State
 
 The key files and directories inside `.agora/` are:
 
@@ -105,12 +191,13 @@ The key files and directories inside `.agora/` are:
 .agora/
 ├── lab.yaml
 ├── LAB.md
+├── runtime.json
 ├── agents/
 │   ├── supervisor/
 │   ├── student-a/
 │   ├── student-b/
-│   ├── staff-a/
-│   └── paper-reviewer-1/
+│   ├── research-staff/
+│   └── paper-reviewer/
 └── shared/
     ├── KANBAN.md
     ├── artifacts/
@@ -121,105 +208,20 @@ The key files and directories inside `.agora/` are:
 
 Use this mental model:
 
-1. `shared/messages/` — supervisor assignments and decisions
-2. `shared/artifacts/` — student outputs and research-staff judgments
-3. `shared/meetings/` — regular 5-phase meeting records
-4. `shared/paper-reviews/` — submission-readiness review rounds
+1. `runtime.json` — runtime bootstrap state, including whether starter tasks have already been seeded
+2. `shared/messages/` — supervisor instructions and agent-to-agent updates
+3. `shared/artifacts/` — student outputs and research-staff judgments
+4. `shared/meetings/` — regular 5-phase meeting records
+5. `shared/paper-reviews/` — reserved space for submission-readiness review rounds
 
 ---
 
-## Step 5: Run a Regular Research Meeting
-
-Use the wrapper:
-
-```bash
-./agora meeting
-```
-
-Or call the meeting engine directly:
-
-```bash
-bash scripts/lab-meeting.sh -caller supervisor -new
-```
-
-Regular meetings now include:
-
-- supervisor
-- students
-- research staff
-
-Regular meetings explicitly **exclude paper reviewers**.
-
-Meeting outputs live under `.agora/shared/meetings/M001/` and follow this structure:
-
-```text
-.agora/shared/meetings/M001/
-├── agenda.md
-├── perspectives/
-│   ├── student-a.md
-│   └── student-b.md
-├── judgments/
-│   └── staff-a.md
-├── critiques/
-├── responses/
-└── decision.md
-```
-
-The important workflow change is that meeting-time internal evaluation is stored in `judgments/`, not `reviews/`.
-
----
-
-## Step 6: Open a Paper Review Case
-
-When the supervisor thinks a draft is approaching submission quality, start a paper-review case:
-
-```bash
-./agora paper-review -new draft-long-context-v1 student-a "paper-reviewer-1"
-# Example output:
-# Created paper review case P001 for paper 'draft-long-context-v1'
-./agora paper-review -status
-```
-
-Here `draft-long-context-v1` is your **paper ID** (chosen by you), while `P001` is the **case ID** generated by Agora. Use the generated `P001` / `P002` / ... identifiers with `-round` and `-complete-round`.
-
-This creates:
-
-```text
-.agora/shared/paper-reviews/P001/
-├── meta.yaml
-├── packet.md
-└── rounds/
-    └── R1/
-        ├── packet.md
-        ├── reviews/
-        │   └── paper-reviewer-1.md
-        └── supervisor-resolution.md
-```
-
-The paper-review loop is separate from meetings:
-
-1. paper reviewers write round reviews in `reviews/`
-2. the supervisor writes `supervisor-resolution.md`
-3. if the resolution says `Outcome: ready-for-next-round`, open another round:
-
-```bash
-./agora paper-review -round P001
-```
-
-4. if the resolution says `Outcome: submission-ready`, close the active round:
-
-```bash
-./agora paper-review -complete-round P001
-```
-
----
-
-## Step 7: Compare Against the Shipped Example Snapshot
+## Step 7: Compare Against the Example Snapshot
 
 If you want a concrete reference without running a full session, inspect the curated example in `examples/`:
 
 - `examples/shared/meetings/M001/` — a regular meeting with research-staff judgment
-- `examples/shared/paper-reviews/P001/` — a separate paper-review case with a reviewer packet and supervisor resolution
+- `examples/shared/paper-reviews/P001/` — an example paper-review packet / round layout
 
 Start with:
 
@@ -238,9 +240,15 @@ less examples/shared/paper-reviews/P001/rounds/R1/reviews/paper-reviewer-1.md
 
 ---
 
-## What to Remember
+## Current Scope to Remember
 
-- **research-staff** is the internal judge inside normal meetings
-- **paper-reviewer** is a separate top-level role used only in paper-review cases
-- group meetings and paper reviews are intentionally separated
-- `examples/` is the fastest way to understand the expected file layout and outputs
+- The TypeScript CLI currently supports **init / agent / start / stop / status / kanban / meeting / web**
+- `agora start` seeds starter tasks once (when the board is empty), launches agent tmux sessions, and starts a **runtime watchdog** that auto-injects prompts into active sessions
+- `agora stop` tears down every tmux session owned by the lab: agents, the watchdog, and stale orphans
+- `agora kanban assign -i <id> -a <agent>` dispatches an existing task to an agent; the watchdog will notify the agent's session
+- Role templates are **TS-native Markdown** files loaded by `agora init` and `agora agent add` — each template includes a session-start checklist and current CLI commands (no shell stubs)
+- Task lifecycle: `todo → assigned → in_progress → review → done`
+- `agora status` reports agent runtime states: `offline / ready / assigned / working / meeting / review`
+- The web UI is **dashboard-first** with a top app chrome (tabs + theme selector); **Lab View** is a secondary low-motion monitoring surface accessible via the chrome tab
+- `paper-reviewer` remains part of the data model and examples
+- The dedicated paper-review command layer has not been surfaced yet in the TypeScript rewrite

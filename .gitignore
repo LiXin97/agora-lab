@@ -18,6 +18,9 @@ shared/MEETING_LOG.md
 !shared/paper-reviews/.gitkeep
 !shared/research-wiki/.gitkeep
 
+# Node
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -43,6 +46,10 @@ venv/
 .worktrees/
 
 .claude/
+.superpowers/
 
 # Internal docs kept locally in this checkout
 docs/internal/
+
+# Build output
+dist/

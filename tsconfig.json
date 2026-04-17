@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@agora-lab/core": ["./packages/core/src/index.ts"],
+      "@agora-lab/server": ["./packages/server/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/server/src/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/web/src/**/*.ts",
+    "packages/web/src/**/*.tsx"
+  ]
+}

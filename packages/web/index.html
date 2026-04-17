@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agora Lab</title>
+    <!-- Pre-hydration theme script: reads persisted preference and applies
+         data-theme to <html> before the first paint so there is no flash
+         of the wrong theme when the page loads. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('gd-theme');
+          var valid = ['system', 'light', 'dark'];
+          var theme = valid.indexOf(stored) !== -1 ? stored : 'system';
+          if (theme === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body class="overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

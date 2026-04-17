@@ -63,4 +63,6 @@ Start with `lab.yaml` to see the configured roles, then follow this path:
 
 This example keeps the regular meeting loop and the paper-review loop separate on purpose; paper reviewers do **not** appear in `shared/meetings/M001/`.
 
+> The current TypeScript CLI already supports init / agents / kanban / meetings / web UI. The `paper-reviews/` snapshot here is a reference layout for the review stage, but it is not yet managed through a dedicated `paper-review` CLI subcommand in the current rewrite.
+
 For the full walkthrough, see the [tutorial](../docs/tutorial.md).
