@@ -80,30 +80,41 @@ const MEETING_PHASES = ['PREPARE', 'CROSS_READ', 'CHALLENGE', 'RESPOND', 'DECISI
 
 // --- Selectors (pure functions, testable) ---
 
-// Re-export pickCurrentTask so existing imports from this module continue to work.
 export { pickCurrentTask } from '../status-meta.js';
 
 export function selectAgentSummaries(state: LabState): AgentSummary[] {
   return state.agents.map(a => {
     const tasks = state.kanban.tasks.filter(t => t.assignee === a.name);
+    let assignedCount = 0;
+    let inProgressCount = 0;
+    let reviewCount = 0;
+    for (const t of tasks) {
+      if (t.status === 'assigned') assignedCount++;
+      else if (t.status === 'in_progress') inProgressCount++;
+      else if (t.status === 'review') reviewCount++;
+    }
     return {
       name: a.name,
       role: a.role,
       status: a.status,
       taskCount: tasks.length,
-      assignedCount: tasks.filter(t => t.status === 'assigned').length,
-      inProgressCount: tasks.filter(t => t.status === 'in_progress').length,
-      reviewCount: tasks.filter(t => t.status === 'review').length,
+      assignedCount,
+      inProgressCount,
+      reviewCount,
       currentTask: pickCurrentTask(tasks),
     };
   });
 }
 
 export function selectKanbanColumns(state: LabState): KanbanColumn[] {
+  const buckets: Record<TaskStatus, KanbanTask[]> = {
+    todo: [], assigned: [], in_progress: [], review: [], done: [],
+  };
+  for (const t of state.kanban.tasks) buckets[t.status].push(t);
   return TASK_STATUS_ORDER.map(status => ({
     status,
     label: TASK_STATUS_LABEL[status],
-    tasks: state.kanban.tasks.filter(t => t.status === status),
+    tasks: buckets[status],
   }));
 }
 

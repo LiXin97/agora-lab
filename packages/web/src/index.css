@@ -271,9 +271,15 @@ body {
 
 .dashboard-workbench {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(0, max-content);
   height: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.dashboard-workbench > :last-child {
+  max-height: 38vh;
+  overflow-y: auto;
 }
 
 .dashboard-grid {
@@ -1112,3 +1118,24 @@ body {
     transition: none;
   }
 }
+
+/* ─── Theme-aware dashboard text ─────────────────────────────────
+   Dashboard panels use Tailwind text-slate-* classes that were
+   designed for a dark background. In light theme we remap them to
+   theme variables so text remains legible. */
+.agent-name {
+  color: var(--text-primary);
+}
+
+.kanban-task-title {
+  color: var(--text-primary);
+}
+
+.kanban-task-body {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .kanban-task-body {
+  background: rgba(15, 23, 42, 0.04);
+}
+

@@ -115,8 +115,6 @@ export const AGENT_STATUS_RING: Record<AgentRuntimeStatus, string> = {
 // Dispatch-semantics helpers
 // ---------------------------------------------------------------------------
 
-const CURRENT_TASK_PRIORITY: readonly TaskStatus[] = ['review', 'in_progress', 'assigned'];
-
 /**
  * Statuses that represent an agent doing real work in the dispatch pipeline.
  * `ready` is NOT included — a ready agent is idle, awaiting dispatch.
@@ -146,12 +144,12 @@ export function agentStatusGroup(
   return 'active';
 }
 
+const CURRENT_TASK_PRIORITY: readonly TaskStatus[] = ['review', 'in_progress', 'assigned'];
+
 /**
  * Returns the single most relevant active task for an agent following dispatch
- * priority: review > in_progress > assigned, with updatedAt as the tiebreaker
- * inside the same status lane.
+ * priority: review > in_progress > assigned, with updatedAt as the tiebreaker.
  * Returns null when the agent has no tasks in an active-work status.
- * todo/done tasks are intentionally excluded — they are not "current".
  */
 export function pickCurrentTask(tasks: KanbanTask[]): KanbanTask | null {
   for (const status of CURRENT_TASK_PRIORITY) {

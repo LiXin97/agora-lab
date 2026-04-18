@@ -33,6 +33,16 @@ export function KanbanWorkbench({ columns, agents, selectedAgent, send }: Props)
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<string>('P1');
   const [assignee, setAssignee] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -99,7 +109,10 @@ export function KanbanWorkbench({ columns, agents, selectedAgent, send }: Props)
                   No tasks in {col.label.toLowerCase()}.
                 </div>
               ) : (
-                col.tasks.map(task => (
+                col.tasks.map(task => {
+                  const isOpen = expanded.has(task.id);
+                  const hasBody = !!task.body && task.body.trim().length > 0;
+                  return (
                   <div
                     key={task.id}
                     className={`rounded-md p-2.5 group transition-colors ${
@@ -108,10 +121,22 @@ export function KanbanWorkbench({ columns, agents, selectedAgent, send }: Props)
                         : 'bg-white/5 hover:bg-white/8'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <span className="text-xs font-medium text-slate-200 leading-tight">{task.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => hasBody && toggleExpanded(task.id)}
+                      className={`w-full flex items-start justify-between text-left ${hasBody ? 'cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <span className="text-xs font-medium kanban-task-title leading-tight flex-1">
+                        {hasBody && <span className="text-slate-500 mr-1">{isOpen ? '▾' : '▸'}</span>}
+                        {task.title}
+                      </span>
                       <span className="text-[10px] text-slate-500 ml-1 flex-shrink-0">#{task.id}</span>
-                    </div>
+                    </button>
+                    {isOpen && hasBody && (
+                      <pre className="mt-2 whitespace-pre-wrap text-[11px] kanban-task-body bg-black/10 rounded p-2 leading-relaxed">
+                        {task.body}
+                      </pre>
+                    )}
                     <div className="mt-1.5 flex items-center gap-2 text-[11px]">
                       <span className={`font-medium ${task.priority === 'P0' ? 'text-red-400' : task.priority === 'P1' ? 'text-amber-400' : 'text-slate-500'}`}>
                         {task.priority}
@@ -137,7 +162,8 @@ export function KanbanWorkbench({ columns, agents, selectedAgent, send }: Props)
                       </select>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

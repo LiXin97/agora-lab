@@ -41,7 +41,7 @@ export function AgentRosterPanel({ agents, selectedAgent, onSelectAgent }: Props
                     <span
                       className={`w-2.5 h-2.5 rounded-full ${AGENT_STATUS_DOT[a.status]} ring-2 ${AGENT_STATUS_RING[a.status]}`}
                     />
-                    <span className="text-sm font-medium text-slate-100 truncate">{a.name}</span>
+                    <span className="text-sm font-medium agent-name truncate">{a.name}</span>
                     {group === 'available' && (
                       <span className="ml-auto text-[10px] text-blue-400/70">idle</span>
                     )}

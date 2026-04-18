@@ -14,7 +14,6 @@ import {
   TASK_STATUS_ORDER,
   TASK_STATUS_LABEL,
   AGENT_STATUS_ORDER,
-  pickCurrentTask as pickCurrentTaskFromMeta,
 } from '../src/status-meta.js';
 import type { LabState } from '../src/hooks/useLabState.js';
 import type { KanbanTask, Meeting, AgentMessage, MeetingPhase } from '@agora-lab/core';
@@ -414,23 +413,5 @@ describe('TASK_STATUS_ORDER and labels', () => {
 describe('AGENT_STATUS_ORDER', () => {
   it('has exactly 6 statuses including all guided-dispatch states', () => {
     expect(AGENT_STATUS_ORDER).toEqual(['offline', 'ready', 'assigned', 'working', 'meeting', 'review']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// pickCurrentTask availability from status-meta (pure utility, not hook layer)
-// ---------------------------------------------------------------------------
-
-describe('pickCurrentTask from status-meta', () => {
-  it('is exported from status-meta.ts as a stable non-hook utility', () => {
-    expect(typeof pickCurrentTaskFromMeta).toBe('function');
-  });
-
-  it('behaves identically to the selector-layer re-export', () => {
-    const tasks = [
-      makeTask({ id: 'a', status: 'assigned' }),
-      makeTask({ id: 'b', status: 'in_progress' }),
-    ];
-    expect(pickCurrentTaskFromMeta(tasks)?.id).toBe(pickCurrentTask(tasks)?.id);
   });
 });

@@ -25,15 +25,16 @@ interface StatCardProps {
   label: string;
   value: string;
   detail: string;
-  accentClass: string;
+  accentClass?: string;
+  accentStyle?: React.CSSProperties;
 }
 
-function StatCard({ label, value, detail, accentClass }: StatCardProps) {
+function StatCard({ label, value, detail, accentClass, accentStyle }: StatCardProps) {
   return (
     <div className="rounded-lg border border-white/6 bg-white/[0.03] px-3 py-2.5">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className={`mt-1 text-base font-semibold ${accentClass}`}>{value}</div>
-      <div className="mt-1 text-xs text-slate-500">{detail}</div>
+      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>{label}</div>
+      <div className={`mt-1 text-base font-semibold ${accentClass ?? ''}`} style={accentStyle}>{value}</div>
+      <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{detail}</div>
     </div>
   );
 }
@@ -52,7 +53,7 @@ export function DecisionHealthPanel({ decisions, health, columns, meetingSummary
       className="grid gap-px border-t border-white/5 bg-white/5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]"
       data-testid="decision-health-panel"
     >
-      <div className="bg-[#0b0d13] min-h-0">
+      <div className="min-h-0" style={{ background: 'var(--surface-0)' }}>
         <h2 className="panel-heading">Decision Log</h2>
         <div className="px-3 pb-3">
           {recentDecisions.length === 0 ? (
@@ -70,7 +71,7 @@ export function DecisionHealthPanel({ decisions, health, columns, meetingSummary
                     <span className="font-medium text-emerald-400">{decision.from}</span>
                     <span className="text-slate-600">{formatTimestampLabel(decision.timestamp)}</span>
                   </div>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-300">{decision.content}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{decision.content}</p>
                 </li>
               ))}
             </ul>
@@ -78,7 +79,7 @@ export function DecisionHealthPanel({ decisions, health, columns, meetingSummary
         </div>
       </div>
 
-      <div className="bg-[#0b0d13] min-h-0">
+      <div className="min-h-0" style={{ background: 'var(--surface-0)' }}>
         <h2 className="panel-heading">System Health</h2>
         <div className="space-y-3 px-3 pb-3">
           <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
@@ -96,7 +97,7 @@ export function DecisionHealthPanel({ decisions, health, columns, meetingSummary
                   ? `${health.readyCount} ready · ${health.activeCount} active`
                   : 'active / total'
               }
-              accentClass="text-slate-100"
+              accentStyle={{ color: 'var(--text-primary)' }}
             />
             <StatCard
               label="Task Flow"
@@ -122,10 +123,10 @@ export function DecisionHealthPanel({ decisions, health, columns, meetingSummary
                 key={column.status}
                 className="rounded-lg border border-white/6 bg-white/[0.03] px-3 py-2"
               >
-                <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
+                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
                   {column.label}
                 </div>
-                <div className="mt-1 text-lg font-semibold text-slate-100">
+                <div className="mt-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {column.tasks.length}
                 </div>
               </div>

@@ -52,6 +52,8 @@ function labReducer(state: LabState, action: LabAction): LabState {
           : null,
       };
     case 'agent:status': {
+      const current = state.agents.find(a => a.name === action.agent);
+      if (!current || current.status === action.status) return state;
       const agents = state.agents.map(a =>
         a.name === action.agent ? { ...a, status: action.status } : a
       );

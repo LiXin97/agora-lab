@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentMessage, Meeting } from '@agora-lab/core';
+import type { AgentMessage, Meeting, MeetingPhase } from '@agora-lab/core';
 import type { MeetingSummary } from '../../hooks/useDashboardSelectors.js';
 import { buildMessageKey } from '../../utils/message.js';
 
@@ -18,7 +18,7 @@ interface Props {
   send: (event: unknown) => void;
 }
 
-const TYPE_COLOR: Record<string, string> = {
+const TYPE_COLOR: Record<AgentMessage['type'], string> = {
   question: 'text-blue-400',
   critique: 'text-rose-400',
   decision: 'text-emerald-400',
@@ -26,22 +26,31 @@ const TYPE_COLOR: Record<string, string> = {
   'meeting-perspective': 'text-amber-400',
 };
 
-const TYPE_LABEL: Record<string, string> = {
+const TYPE_LABEL: Record<AgentMessage['type'], string> = {
   question: '?',
   critique: '!',
   decision: '✓',
-  status: '·',
+  status: '●',
   'meeting-perspective': '◉',
 };
 
-const MEETING_PHASES = ['PREPARE', 'CROSS_READ', 'CHALLENGE', 'RESPOND', 'DECISION'] as const;
-const PHASE_LABELS: Record<string, string> = {
+const TYPE_TOOLTIP: Record<AgentMessage['type'], string> = {
+  question: 'Question',
+  critique: 'Critique',
+  decision: 'Decision',
+  status: 'Status update',
+  'meeting-perspective': 'Meeting perspective',
+};
+
+const PHASE_LABELS: Record<MeetingPhase, string> = {
   PREPARE: 'Prepare',
   CROSS_READ: 'Cross Read',
   CHALLENGE: 'Challenge',
   RESPOND: 'Respond',
   DECISION: 'Decision',
 };
+
+const MEETING_PHASES: readonly MeetingPhase[] = ['PREPARE', 'CROSS_READ', 'CHALLENGE', 'RESPOND', 'DECISION'];
 
 export function ActivityPanel({ messages, meetingSummary, meeting, agents, selectedAgent, send }: Props) {
   const [meetingOpen, setMeetingOpen] = useState(Boolean(meetingSummary));
@@ -129,7 +138,7 @@ export function ActivityPanel({ messages, meetingSummary, meeting, agents, selec
                 <div>
                   <div className="text-[11px] text-slate-400 mb-1">Participants (2+):</div>
                   <div className="flex flex-wrap gap-1">
-                    {agents.map(a => (
+                    {agents.filter(a => a.role !== 'paper-reviewer').map(a => (
                       <button
                         key={a.name}
                         onClick={() => toggleParticipant(a.name)}
@@ -186,8 +195,8 @@ export function ActivityPanel({ messages, meetingSummary, meeting, agents, selec
           [...visibleMessages].reverse().map((m) => (
             <div key={buildMessageKey(m)} className="bg-white/[0.03] rounded-md px-2.5 py-2 hover:bg-white/5 transition-colors">
               <div className="flex items-center gap-1.5 text-[11px]">
-                <span className={`font-semibold ${TYPE_COLOR[m.type] ?? 'text-slate-400'}`}>
-                  {TYPE_LABEL[m.type] ?? '·'}
+                <span className={`font-semibold ${TYPE_COLOR[m.type]}`} title={TYPE_TOOLTIP[m.type]}>
+                  {TYPE_LABEL[m.type]}
                 </span>
                 <span className="text-slate-300 font-medium">{m.from}</span>
                 <span className="text-slate-600">→</span>
