@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **L1 idle heartbeat** (`packages/cli/src/automation/watchdog.ts`) — when an agent's signature has not changed for `IDLE_HEARTBEAT_MS` (20 min default) since its last injection, the watchdog pings it with a "re-run your Session Start Checklist" prompt. Without this, an event-driven signature-diff scheduler deadlocks the moment everyone goes idle (no new messages → no signature change → no injection forever). Skipped while the pane is mid-inference and for agents that have never been kicked off.
+- **L2 supervisor orchestrator** (`packages/cli/src/automation/orchestrator-tick.ts`) — per-cycle pure aggregator that computes a global view across the kanban, the latest meeting, and recent messages: counts per status, stuck `in_progress` / `review` tasks (> `stuckTaskMs`, default 2h), `Review` column empty while `In Progress` is non-empty, stalled meetings (> `stalledMeetingMs`, default 1h), and a string-match `#ID`-based blocking-chain heuristic. When `hasSignal` is true and the supervisor would otherwise be skipped this cycle, `runRuntimeCycle` overlays a supervisor-targeted orchestrator prompt with an action policy: act on the root blocker, reassign / decompose via `agora kanban`, or write a `supervisor_to_user_*_status.md` note — silent idle is explicitly forbidden. Dedup signature is bucketed in 30-min windows so the same global signal does not re-inject every cycle.
+- **`isPaneBusy` guard** (`packages/cli/src/tmux.ts`) — detects an active Claude Code spinner line via regex (`/[✽✻✶✳]\s+\w+…/`) on the captured pane tail. The watchdog and orchestrator both check this before sending input; without it, prompts stack into stray bracketed-paste blocks that never execute.
+- **Bracketed-paste delay in `sendTmuxInput`** — 150 ms pause between `send-keys -l` and the trailing `Enter` so Claude Code's TUI processes the paste-end sequence before the submit key arrives.
+- **Kickoff prompt** (`KICKOFF_PROMPT` in `packages/cli/src/tmux.ts`) — `agora start` now launches each backend with a real first user prompt (`"You have just been launched by the Agora lab runtime. Read your CLAUDE.md and follow its Session Start Checklist now…"`) instead of swallowing the workspace path as the first user message. CLAUDE.md auto-discovery still works because the tmux pane is created with `-c <workspacePath>`.
+- Tests for orchestrator aggregation, prompt rendering, watchdog heartbeat (fires when stale, skipped when busy / recent / never-injected), and end-to-end deadlock break in `runRuntimeCycle` (overlay fires when supervisor's pending signature equals `lastPromptSignature`).
+
+### Changed
+- `runRuntimeCycle` now triggers the L2 overlay whenever the supervisor would NOT receive a fresh injection this cycle — either no pending at all, or pending whose signature matches the recorded `lastPromptSignature` — not only when there is no pending. The earlier guard let stale `task-in-progress` pendings preempt the orchestrator, defeating the deadlock break.
+- `runRuntimeCycle` is now exported and `RuntimeCycleDeps` parameterized so tests can substitute `hasTmuxSession` / `sendTmuxInput` / `isPaneBusy`.
+
+### Fixed
+- Agents started by `agora start` no longer greet with "Ready. What would you like to work on?" — the workspace path is no longer passed as the first user prompt.
+
 ## [0.2.0] - 2026-04-16
 
 ### Added

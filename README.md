@@ -159,7 +159,10 @@ agora web      # production-style: serves built frontend from packages/web/dist
 Open the URL printed in the terminal. `agora dev` starts the realtime server on the requested port and a Vite frontend on a second local port.
 
 <p align="center">
-  <img src="docs/assets/readme/web-dashboard.png" alt="Web Dashboard" width="80%" />
+  <img src="docs/assets/readme/runtime-dashboard.png" alt="Dashboard mid-run: kanban, decision log, and system health after an L2 deadlock break" width="90%" />
+</p>
+<p align="center">
+  <img src="docs/assets/readme/lab-view.png" alt="Lab View: pixel-art monitoring surface" width="90%" />
 </p>
 
 The default experience is an **Analyst Workbench**:
@@ -260,6 +263,11 @@ Submit or revise
 - **Workspace isolation**: Hooks enforce per-agent workspace boundaries
 - **Role templates (TS-native)**: `agora init` and `agora agent add` write per-agent `CLAUDE.md` prompts from TypeScript-era Markdown templates — no shell stubs; each template includes a session-start checklist and current CLI commands
 - **Bidirectional WebSocket**: Browser sends commands (kanban, meeting) to server; server watches files and broadcasts updates
+- **Runtime automation (L1+L2)**: A long-running watchdog drives idle agents back to work without human polling
+  - Signature-diff injection: when an agent's inbox/task/meeting state changes, the watchdog sends a fresh prompt to that agent's tmux pane
+  - L1 idle heartbeat: if a previously-active agent has been silent past the heartbeat threshold (20 min default), it is re-prompted to re-run its Session Start Checklist — breaks the "no event ⇒ no injection ⇒ deadlock" trap
+  - L2 supervisor orchestrator: every cycle, the runtime aggregates a global view (stuck `in_progress` tasks, empty `Review` column with active work, stalled meetings, blocking-chain heuristic) and overlays a supervisor-targeted prompt with an action policy (act, reassign, or write a status note — never silently idle). Dedup is bucketed in 30-min windows to avoid noise
+  - Pane-busy guard: injection is skipped while the target Claude Code TUI is mid-inference, so prompts never stack into stray paste blocks
 
 ## Group Meeting Protocol
 
@@ -271,22 +279,39 @@ Meetings are the core adversarial mechanism for the regular research loop — mo
 4. **RESPOND**: Each participant addresses critiques targeting their work
 5. **DECISION**: Supervisor reads everything and decides: `CONTINUE` | `PIVOT` | `MERGE` | `SPLIT`
 
-Paper reviewers do **not** participate in these regular meetings; they operate through the paper-review workflow below.
+**Meeting trigger is manual.** There is no automatic cadence — the supervisor calls a meeting (`agora meeting new`, or **Start Review Meeting** in the dashboard) once enough material has accumulated for an adversarial debate. Between meetings, the lab runs event-driven through kanban assignments and file messages in `shared/messages/`. `lab.yaml` records `meeting.trigger: manual`, `min_participants`, and `decision_maker`; participants are chosen per meeting from the students and research staff. Paper reviewers are never selected — the server rejects meetings that include them and the dashboard participant picker filters them out.
+
+Phases only advance when their artifacts are present. `PREPARE` requires every participant's perspective file (and a judgment for any research staff); `CROSS_READ` requires judgments from every participant; `CHALLENGE` requires at least one critique; `RESPOND` requires responses from every non-decision-maker. `DECISION` is terminal.
 
 ## Paper Review Workflow
 
-Paper-review artifacts live under `shared/paper-reviews/`, and the example snapshot in `examples/` shows the intended packet / round structure.
+Paper reviewers live **outside** the regular lab loop: no group meetings, no cross-talk with students/supervisor, no generic kanban pickup. They act only on explicit review tasks that the supervisor dispatches to them.
 
-The current TypeScript CLI focuses on **lab initialization, agent management, kanban, meetings, and the web UI**. A dedicated `paper-review` subcommand is **not yet surfaced** in this rewrite, so paper-review case management is presently file/workflow driven.
+### Dispatch format (supervisor-side)
 
-Use the same directory conventions when modeling a review cycle:
+Every reviewer task must carry two fields in its title/description — a paper pointer **and** a target conference:
 
-1. Create a case directory under `shared/paper-reviews/<case-id>/`
-2. Store per-round reviewer outputs under `rounds/Rn/reviews/`
-3. Write the supervisor synthesis in `supervisor-resolution.md`
-4. Repeat rounds until the draft is submission-ready
+```bash
+# Specific paper
+agora kanban add -a paper-reviewer-1 -p P2 \
+  -T "Review arxiv:2403.12345 | target: NeurIPS 2025 (main track)"
 
-Each case keeps a durable packet, round history, assigned reviewers, and final status.
+# Time-window search (reviewer picks the most relevant paper in the window)
+agora kanban add -a paper-reviewer-2 -p P2 \
+  -T "Review window=2026-04-01..2026-04-14; topic=\"diffusion language models\" | target: ICLR 2026"
+```
+
+A task missing either the pointer or the target conference is unusable — fix the description before the reviewer picks it up.
+
+### Reviewer pipeline
+
+Each reviewer executes a three-step pipeline per task:
+
+1. **Locate the paper** — fetch the given arXiv id / pdf, or search arXiv inside the stated time window and pick the single most relevant paper for the topic.
+2. **Identify the target conference** — load that conference's official reviewer instructions and reproduce its review form literally (headings, required fields, rating scale, confidence scale, checklist). No invented or merged fields across conferences.
+3. **Write the review** — fill every required field. Output goes to `shared/paper-reviews/<paperId>/rounds/R1/reviews/<reviewer-name>.md` with YAML frontmatter (`paper_arxiv_id`, `paper_title`, `target_conference`, `reviewer`, `completed_at`).
+
+Supervisor synthesis per round still goes to `supervisor-resolution.md` under the case directory. Repeat rounds until the draft is submission-ready.
 
 ## Research Pipeline
 

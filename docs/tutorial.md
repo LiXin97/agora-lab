@@ -82,6 +82,14 @@ The most important role distinction is:
 3. Launches all configured agents in dedicated tmux sessions.
 4. Starts a **runtime watchdog** tmux session that polls messages, KANBAN.md, and meetings, then automatically injects actionable kickoff and dispatch prompts into active agent sessions.
 
+The watchdog runs three injection layers per cycle:
+
+- **Signature-diff (event-driven)**: whenever an agent's unread / assigned-task / meeting state changes, a tailored prompt is sent to its tmux pane.
+- **L1 heartbeat (20 min default)**: any agent that has been previously injected but has had no signature change for over the heartbeat window receives a "re-run your Session Start Checklist" ping — this prevents the "no event ⇒ no injection ⇒ permanent idle" deadlock.
+- **L2 orchestrator overlay (supervisor only)**: each cycle the runtime aggregates a global view (stuck `in_progress` tasks > 2h, `Review` column empty while `In Progress` is non-empty, stalled meetings, possible blocking chains via `#ID` references). When a real signal exists and the supervisor is otherwise about to be skipped (no pending, or pending whose signature already matches `lastPromptSignature`), an orchestrator prompt is overlaid with an action policy: act on the root blocker, reassign / decompose via `agora kanban`, or write a `shared/messages/supervisor_to_user_*_status.md` note — silent idle is forbidden. Dedup is bucketed in 30-min windows.
+
+Injection is skipped while the target Claude Code TUI is mid-inference (a spinner is detected on the pane), so prompts never stack into paste blocks.
+
 ```bash
 agora start
 agora status
@@ -126,6 +134,8 @@ agora web
 
 The default UI is a **dashboard-first analyst workbench**:
 
+![Dashboard](assets/readme/runtime-dashboard.png)
+
 - **Left:** agent roster and status summary
 - **Center:** kanban workbench
 - **Right:** recent messages and meeting controls
@@ -141,6 +151,8 @@ Use the chrome tabs to switch between the dashboard and the pixel-art **Lab View
 ### Lab View controls
 
 **Lab View** is a **low-motion monitoring surface**. Agents reflect their current state (working / meeting / review) but do not animate continuously. It is useful for a spatial at-a-glance overview and for overlay-based inspection:
+
+![Lab View](assets/readme/lab-view.png)
 
 - `K` or whiteboard: open the kanban overlay
 - `M` or meeting table: open the meeting overlay
@@ -180,6 +192,22 @@ agora meeting advance mtg-...
 ```
 
 `agora meeting new` automatically includes the currently configured agents and creates a meeting record under `.agora/shared/meetings/`.
+
+Meetings are **manually triggered** — `lab.yaml` sets `meeting.trigger: manual`, so the supervisor calls a meeting only after enough material has accumulated for adversarial debate. Paper reviewers are never valid participants; the server rejects their inclusion and the dashboard picker hides them.
+
+### Dispatching paper reviews
+
+Paper reviewers live outside the regular loop. The supervisor dispatches review tasks with a specific format — a **paper pointer** and a **target conference**:
+
+```bash
+agora kanban add -a paper-reviewer-1 -p P2 \
+  -T "Review arxiv:2403.12345 | target: NeurIPS 2025 (main track)"
+
+agora kanban add -a paper-reviewer-2 -p P2 \
+  -T "Review window=2026-04-01..2026-04-14; topic=\"diffusion language models\" | target: ICLR 2026"
+```
+
+The reviewer fetches / searches the paper, loads the target conference's official review form, and writes `shared/paper-reviews/<paperId>/rounds/R1/reviews/<reviewer-name>.md`.
 
 ---
 
