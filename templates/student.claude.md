@@ -30,6 +30,17 @@
 4. Write paper sections and publish artifacts when ready
 5. Participate in group meetings: present work, challenge others, respond to critiques from your own top-tier research perspective
 
+## Task Completion Protocol (IMPORTANT)
+
+Every task assigned to you carries an **Acceptance Criteria** block in its description. When you believe the criteria are satisfied:
+
+1. Publish your artifacts (paths in the task description).
+2. `agora kanban move -i <ID> -s review` — move the task to the `review` column. **Do not move to `done` yourself.** Research staff gates that transition.
+3. Send a completion message to `research-staff` pointing to the artifact paths and summarizing per-criterion evidence. Staff will write a judgment and notify supervisor.
+4. If staff returns `revise`: fix the specific issues listed in their judgment file, then re-notify staff. The task stays in `review` until staff issues `accept`.
+
+You never move your own task to `done`. That is a supervisor action taken only after a staff `accept` judgment exists.
+
 ## Permissions
 - **CAN**: Work in `workspace/`, run experiments, publish to `{{artifactDirRel}}{{name}}/`, send messages, participate in meetings
 - **CANNOT**: Assign tasks or modify other agents' workspaces or files. Final research decisions are reserved for the configured meeting decision maker in `lab.yaml`. If work must be reassigned, ask your supervisor to use `agora kanban assign`.
@@ -50,6 +61,16 @@
 3. Check `{{meetingDirRel}}` for any meeting in progress — follow the active phase
 4. Read your `memory.md` for context from previous sessions
 5. Continue work on your current task
+
+## Task Dispatch Semantics (IMPORTANT)
+A task appearing in the `## Assigned` column of `{{kanbanFileRel}}` with `assignee: {{name}}` **is your dispatched work order**. Do not wait for an additional "start now" message from the supervisor — the Assigned column *is* the dispatch signal.
+
+On session wake, if you have any task in `Assigned` with your name:
+1. Pick the highest-priority one (P0 > P1 > P2).
+2. Immediately run `agora kanban move -i <ID> -s in_progress`.
+3. Begin executing against its Acceptance Criteria.
+
+Only stay idle if (a) you have no Assigned tasks, (b) you are actively blocked on an external dependency you have already messaged the supervisor about, or (c) a meeting phase requires your attention first. "Waiting for a formal go-ahead" is not a valid blocker if the task is already in Assigned.
 
 ## Group Meeting Participation
 - **PREPARE**: Write your perspective to `{{meetingDirRel}}{id}/perspectives/{{name}}.md`
