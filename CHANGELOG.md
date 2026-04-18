@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-04-18
 
 ### Added
 - **L1 idle heartbeat** (`packages/cli/src/automation/watchdog.ts`) — when an agent's signature has not changed for `IDLE_HEARTBEAT_MS` (20 min default) since its last injection, the watchdog pings it with a "re-run your Session Start Checklist" prompt. Without this, an event-driven signature-diff scheduler deadlocks the moment everyone goes idle (no new messages → no signature change → no injection forever). Skipped while the pane is mid-inference and for agents that have never been kicked off.
