@@ -92,6 +92,13 @@ describe('kanban', () => {
     expect(() => moveTask(board, '999', 'done')).toThrow('Task #999 not found');
   });
 
+  it('refuses to move an unassigned task into in_progress', () => {
+    const board = addTask({ tasks: [] }, { title: 'Orphan task', priority: 'P2' });
+    expect(board.tasks[0].assignee).toBeUndefined();
+    expect(() => moveTask(board, board.tasks[0].id, 'in_progress'))
+      .toThrow(/cannot enter in_progress without an assignee/);
+  });
+
   it('assigns a task', () => {
     const board = parseKanbanBoard(SAMPLE_BOARD);
     const updated = assignTask(board, '001', 'student-b');
@@ -126,7 +133,7 @@ describe('kanban', () => {
   });
 
   it('assignTask does not change status for in_progress/review/done tasks', () => {
-    const board = addTask({ tasks: [] }, { title: 'Active task', priority: 'P2' });
+    const board = addTask({ tasks: [] }, { title: 'Active task', priority: 'P2', assignee: 'alice' });
     const inProgress = moveTask(board, board.tasks[0].id, 'in_progress');
 
     const withAssignee = assignTask(inProgress, inProgress.tasks[0].id, 'bob');
@@ -153,5 +160,70 @@ describe('kanban', () => {
 `);
 
     expect(pickCurrentTask(board.tasks)?.id).toBe('002');
+  });
+
+  it('parses multi-line task body with Acceptance Criteria and extracts assignee anywhere in the block', () => {
+    const md = `# Research Task Board
+
+## Todo
+
+## Assigned
+- [P1] #001 Short single-line task. (assignee: student-a) <!-- created:2026-04-17T14:00:00Z updated:2026-04-17T14:00:00Z -->
+- [P1] #002 Literature scan: prior work on small-LM arithmetic failure causes.
+
+Deliverable: student-b/workspace/lit/related_work.md
+
+Acceptance Criteria:
+- [ ] >=12 papers covered
+- [ ] Cites at least 3 papers from 2024-2026 (assignee: student-b) <!-- created:2026-04-17T14:00:00Z updated:2026-04-17T14:00:00Z -->
+
+## In Progress
+
+## Review
+
+## Done
+`;
+    const board = parseKanbanBoard(md);
+    expect(board.tasks).toHaveLength(2);
+
+    const t1 = board.tasks.find((t) => t.id === '001')!;
+    expect(t1.title).toBe('Short single-line task.');
+    expect(t1.body).toBeUndefined();
+    expect(t1.assignee).toBe('student-a');
+
+    const t2 = board.tasks.find((t) => t.id === '002')!;
+    expect(t2.title).toBe('Literature scan: prior work on small-LM arithmetic failure causes.');
+    expect(t2.assignee).toBe('student-b');
+    expect(t2.body).toContain('Acceptance Criteria:');
+    expect(t2.body).toContain('>=12 papers covered');
+    expect(t2.body).toContain('Deliverable:');
+    // assignee / meta stripped from body
+    expect(t2.body).not.toContain('assignee:');
+    expect(t2.body).not.toContain('<!--');
+  });
+
+  it('serializes multi-line task body and round-trips cleanly', () => {
+    const source = `# Research Task Board
+
+## Todo
+
+## Assigned
+- [P1] #002 Literature scan.
+
+Deliverable: path/to/doc.md
+
+Acceptance Criteria:
+- [ ] >=12 papers
+- [ ] cites 3 recent (assignee: student-b) <!-- created:2026-04-17T14:00:00Z updated:2026-04-17T14:00:00Z -->
+
+## In Progress
+
+## Review
+
+## Done
+`;
+    const board = parseKanbanBoard(source);
+    const reparsed = parseKanbanBoard(serializeKanbanBoard(board));
+    expect(reparsed.tasks).toEqual(board.tasks);
   });
 });

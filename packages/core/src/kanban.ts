@@ -1,6 +1,12 @@
 import type { KanbanBoard, KanbanTask, TaskStatus, TaskPriority } from './types.js';
 
-const TASK_RE = /^- \[(P[0-3])\] #(\d{3}) (.+?)(?:\s*\(assignee:\s*(.+?)\))?(?:\s*<!--\s*created:(\S+)\s+updated:(\S+)\s*-->)?$/;
+// Matches the HEADER line of a task: `- [P1] #001 <title-first-line>`.
+// Title may continue across following lines (body). Assignee metadata and the
+// `<!-- created:... updated:... -->` comment can appear anywhere in the block,
+// typically on the final line of a multi-line body (see addTask/heredoc form).
+const TASK_HEADER_RE = /^- \[(P[0-3])\] #(\d{3}) (.*)$/;
+const ASSIGNEE_RE = /\(assignee:\s*([^)]+)\)/;
+const META_RE = /<!--\s*created:(\S+)\s+updated:(\S+)\s*-->/;
 
 const STATUS_HEADERS: Record<string, TaskStatus> = {
   'Backlog': 'todo',   // legacy compatibility
@@ -25,29 +31,76 @@ export function parseKanbanBoard(markdown: string): KanbanBoard {
   const tasks: KanbanTask[] = [];
   let currentStatus: TaskStatus | null = null;
 
-  for (const line of markdown.split('\n')) {
+  const lines = markdown.split('\n');
+
+  const flushTask = (headerMatch: RegExpMatchArray, bodyLines: string[]): KanbanTask => {
+    // Reassemble the whole block, strip assignee/meta for clean title+body.
+    const full = [headerMatch[3], ...bodyLines].join('\n').trim();
+    const assigneeMatch = full.match(ASSIGNEE_RE);
+    const metaMatch = full.match(META_RE);
+    const cleaned = full
+      .replace(ASSIGNEE_RE, '')
+      .replace(META_RE, '')
+      .replace(/[ \t]+$/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    // Title = first non-empty line; body = the rest.
+    const cleanedLines = cleaned.split('\n');
+    const title = (cleanedLines[0] ?? '').trim();
+    const body = cleanedLines.slice(1).join('\n').trim() || undefined;
+    const now = new Date().toISOString();
+    return {
+      id: headerMatch[2],
+      priority: headerMatch[1] as TaskPriority,
+      title,
+      body,
+      assignee: assigneeMatch?.[1].trim() || undefined,
+      status: currentStatus!,
+      createdAt: metaMatch?.[1] || now,
+      updatedAt: metaMatch?.[2] || now,
+    };
+  };
+
+  let pendingHeader: RegExpMatchArray | null = null;
+  let pendingBody: string[] = [];
+
+  const commit = () => {
+    if (pendingHeader && currentStatus) {
+      tasks.push(flushTask(pendingHeader, pendingBody));
+    }
+    pendingHeader = null;
+    pendingBody = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
     const trimmed = line.trim();
+
     if (trimmed.startsWith('## ')) {
+      commit();
       const heading = trimmed.slice(3).trim();
       currentStatus = STATUS_HEADERS[heading] ?? null;
       continue;
     }
-    if (currentStatus && trimmed.startsWith('- [')) {
-      const m = trimmed.match(TASK_RE);
-      if (m) {
-        const now = new Date().toISOString();
-        tasks.push({
-          id: m[2],
-          priority: m[1] as TaskPriority,
-          title: m[3],
-          assignee: m[4] || undefined,
-          status: currentStatus,
-          createdAt: m[5] || now,
-          updatedAt: m[6] || now,
-        });
-      }
+
+    const headerMatch = trimmed.match(TASK_HEADER_RE);
+    if (currentStatus && headerMatch) {
+      commit();
+      pendingHeader = headerMatch;
+      pendingBody = [];
+      continue;
+    }
+
+    if (pendingHeader) {
+      // Continuation line. Stop at the next `- [P?]` header (already handled
+      // above) or a new `## ` section. Blank lines are kept — they matter for
+      // separating Deliverable / Acceptance Criteria blocks when we render the
+      // task back out.
+      pendingBody.push(line);
     }
   }
+  commit();
+
   return { tasks };
 }
 
@@ -63,10 +116,19 @@ export function serializeKanbanBoard(board: KanbanBoard): string {
   for (const status of ['todo', 'assigned', 'in_progress', 'review', 'done'] as TaskStatus[]) {
     lines.push(`## ${STATUS_TO_HEADER[status]}`);
     for (const t of grouped[status]) {
-      let line = `- [${t.priority}] #${t.id} ${t.title}`;
-      if (t.assignee) line += ` (assignee: ${t.assignee})`;
-      line += ` <!-- created:${t.createdAt} updated:${t.updatedAt} -->`;
-      lines.push(line);
+      const trailer = `${t.assignee ? ` (assignee: ${t.assignee})` : ''} <!-- created:${t.createdAt} updated:${t.updatedAt} -->`;
+      if (t.body && t.body.trim().length > 0) {
+        lines.push(`- [${t.priority}] #${t.id} ${t.title}`);
+        lines.push('');
+        lines.push(t.body);
+        // Append assignee + meta to the last non-empty line of the body, so a
+        // subsequent parse re-attaches them. Line-internal edits via Edit tool
+        // rely on stable trailing metadata, so tack them onto the final line.
+        const last = lines.pop() ?? '';
+        lines.push(`${last}${trailer}`);
+      } else {
+        lines.push(`- [${t.priority}] #${t.id} ${t.title}${trailer}`);
+      }
     }
     lines.push('');
   }
@@ -84,12 +146,23 @@ function nextId(board: KanbanBoard): string {
 
 export function addTask(
   board: KanbanBoard,
-  opts: { title: string; priority: TaskPriority; assignee?: string },
+  opts: { title: string; priority: TaskPriority; assignee?: string; body?: string },
 ): KanbanBoard {
   const now = new Date().toISOString();
+  // If caller passed a multi-line title (as the CLI does when `-T` receives a
+  // heredoc), split into title + body so the header regex is always clean.
+  let title = opts.title;
+  let body = opts.body;
+  if (title.includes('\n')) {
+    const parts = title.split('\n');
+    title = (parts[0] ?? '').trim();
+    const rest = parts.slice(1).join('\n').trim();
+    body = body ? `${rest}\n\n${body}` : rest || undefined;
+  }
   const task: KanbanTask = {
     id: nextId(board),
-    title: opts.title,
+    title,
+    body: body && body.trim().length > 0 ? body.trim() : undefined,
     priority: opts.priority,
     assignee: opts.assignee,
     status: opts.assignee ? 'assigned' : 'todo',
@@ -106,7 +179,10 @@ function findTask(board: KanbanBoard, taskId: string): KanbanTask {
 }
 
 export function moveTask(board: KanbanBoard, taskId: string, newStatus: TaskStatus): KanbanBoard {
-  findTask(board, taskId);
+  const task = findTask(board, taskId);
+  if (newStatus === 'in_progress' && !task.assignee) {
+    throw new Error(`Task #${taskId} cannot enter in_progress without an assignee`);
+  }
   const now = new Date().toISOString();
   return {
     tasks: board.tasks.map((t) => {

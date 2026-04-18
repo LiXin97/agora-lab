@@ -28,10 +28,11 @@ async function saveMeeting(labDir: string, config: LabConfig, meeting: Meeting):
 }
 
 export async function meetingNewCommand(labDir: string, config: LabConfig): Promise<string> {
-  const participants = await listAgentDirs(labDir);
+  const allAgents = await listAgentDirs(labDir);
+  const participants = allAgents.filter((name) => config.agents[name]?.role !== 'paper-reviewer');
   if (participants.length < config.meeting.minParticipants) {
     throw new Error(
-      `Need at least ${config.meeting.minParticipants} agents, have ${participants.length}`,
+      `Need at least ${config.meeting.minParticipants} non-reviewer agents, have ${participants.length}`,
     );
   }
   const meeting = createMeeting({

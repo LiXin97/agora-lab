@@ -95,6 +95,14 @@ export async function handleCommand(
       });
     }
     case 'meeting:create': {
+      const reviewerParticipants = event.participants.filter(
+        (name) => config.agents[name]?.role === 'paper-reviewer',
+      );
+      if (reviewerParticipants.length > 0) {
+        throw new Error(
+          `Paper reviewers cannot join group meetings: ${reviewerParticipants.join(', ')}`,
+        );
+      }
       const meeting = createMeeting({
         participants: event.participants,
         decisionMaker: event.decisionMaker,

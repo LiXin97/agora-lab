@@ -38,13 +38,14 @@ describe('meeting', () => {
     m = advancePhase(m);
     expect(m.phase).toBe('CROSS_READ');
 
-    // CROSS_READ -> CHALLENGE
-    m.artifacts.judgments = { a: 'ja', b: 'jb', c: 'jc' };
+    // CROSS_READ -> CHALLENGE (no artifact gate; supervisor's call once perspectives read)
     m = advancePhase(m);
     expect(m.phase).toBe('CHALLENGE');
 
-    // CHALLENGE -> RESPOND
-    m.artifacts.critiques = { b: 'critique from b' };
+    // CHALLENGE -> RESPOND requires ≥ N-1 critiques (here: 2)
+    m.artifacts.critiques = { b_on_a: 'x' };
+    expect(canAdvance(m)).toBe(false);
+    m.artifacts.critiques = { b_on_a: 'x', c_on_a: 'y' };
     m = advancePhase(m);
     expect(m.phase).toBe('RESPOND');
 
@@ -56,5 +57,13 @@ describe('meeting', () => {
     // DECISION is terminal
     expect(canAdvance(m)).toBe(false);
     expect(() => advancePhase(m)).toThrow('Cannot advance');
+  });
+
+  it('CROSS_READ advances without judgment artifacts (judgments are out-of-band)', () => {
+    let m = createMeeting({ participants: ['a', 'b'], decisionMaker: 'a' });
+    m.artifacts.perspectives = { a: 'pa', b: 'pb' };
+    m = advancePhase(m);
+    expect(m.phase).toBe('CROSS_READ');
+    expect(canAdvance(m)).toBe(true); // no judgment dependency
   });
 });

@@ -165,7 +165,7 @@ describe('handleCommand', () => {
   });
 
   it('kanban:move changes task status', async () => {
-    await handleCommand(labDir, { type: 'kanban:add', title: 'Move Me', priority: 'P2' });
+    await handleCommand(labDir, { type: 'kanban:add', title: 'Move Me', priority: 'P2', assignee: 'student-a' });
     const md1 = await readFile(join(labDir, 'shared', 'KANBAN.md'), 'utf-8');
     const idMatch = md1.match(/#(\d+)/);
     const id = idMatch![1];
@@ -298,8 +298,8 @@ describe('handleCommand', () => {
   }, 15_000);
 
   it('handleCommand returns summary strings', async () => {
-    const addResult = await handleCommand(labDir, { type: 'kanban:add', title: 'Test Task', priority: 'P2' });
-    expect(addResult).toContain('Added task');
+    const addResult = await handleCommand(labDir, { type: 'kanban:add', title: 'Test Task', priority: 'P2', assignee: 'student-a' });
+    expect(addResult).toContain('Added and dispatched task');
 
     const id = addResult.match(/#(\d+)/)?.[1];
     expect(id).toBeDefined();

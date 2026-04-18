@@ -1,6 +1,6 @@
 import type { Meeting, MeetingPhase, MeetingArtifacts } from './types.js';
 
-const PHASES: MeetingPhase[] = ['PREPARE', 'CROSS_READ', 'CHALLENGE', 'RESPOND', 'DECISION'];
+export const PHASES: MeetingPhase[] = ['PREPARE', 'CROSS_READ', 'CHALLENGE', 'RESPOND', 'DECISION'];
 
 export function getMeetingPhaseIndex(phase: MeetingPhase): number {
   return PHASES.indexOf(phase);
@@ -25,9 +25,13 @@ export function canAdvance(meeting: Meeting): boolean {
     case 'PREPARE':
       return participants.every((p) => p in artifacts.perspectives);
     case 'CROSS_READ':
-      return participants.every((p) => p in artifacts.judgments);
+      // CROSS_READ has no phase-gated artifact (skill uses out-of-band `-ack-read`).
+      // Advancement is the supervisor's judgment call once perspectives have been read.
+      return true;
     case 'CHALLENGE':
-      return Object.keys(artifacts.critiques).length > 0;
+      // Require a substantive critique set: at least one critique per non-DM participant
+      // (or, in tiny meetings, simply more critiques than participants).
+      return Object.keys(artifacts.critiques).length >= Math.max(1, participants.length - 1);
     case 'RESPOND': {
       const nonDM = participants.filter((p) => p !== decisionMaker);
       return nonDM.every((p) => p in artifacts.responses);

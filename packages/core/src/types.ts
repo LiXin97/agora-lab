@@ -109,6 +109,7 @@ export type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export interface KanbanTask {
   id: string;
   title: string;
+  body?: string;
   assignee?: string;
   priority: TaskPriority;
   status: TaskStatus;
