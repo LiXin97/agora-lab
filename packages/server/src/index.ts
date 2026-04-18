@@ -10,6 +10,12 @@ import { handleCommand } from './commands.js';
 export { type ServerEvent, type AgentInfo } from './events.js';
 export { buildFullState, getFullStateEvents } from './watcher.js';
 export { handleCommand } from './commands.js';
+export {
+  loadLabConfig,
+  loadKanbanBoard,
+  loadLatestMeeting,
+  loadRecentMessages,
+} from './runtime.js';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -103,6 +109,7 @@ export async function startServer(opts: ServerOptions): Promise<{ close: () => v
       console.error('Failed to send initial state:', err);
     }
     ws.on('close', () => clients.delete(ws));
+    ws.on('error', () => clients.delete(ws));
     ws.on('message', async (raw) => {
       const event = parseClientEvent(String(raw));
       if (!event) return;

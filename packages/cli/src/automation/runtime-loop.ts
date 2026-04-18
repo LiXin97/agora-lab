@@ -5,13 +5,90 @@ import {
   serializeRuntimeState,
 } from '@agora-lab/core';
 import type { LabConfig, RuntimeState } from '@agora-lab/core';
-import { ensureLabRuntime } from '../runtime.js';
-import { hasTmuxSession, sendTmuxInput } from '../tmux.js';
+import { loadServerModule } from '../server-runtime.js';
+import { hasTmuxSession, sendTmuxInput, isPaneBusy } from '../tmux.js';
 import { buildPendingAgentPrompt } from './pending-items.js';
+import { buildOrchestratorSummary, renderOrchestratorPrompt } from './orchestrator-tick.js';
 import { runWatchdogCycle } from './watchdog.js';
+
+/** Bucket size for orchestrator-tick dedup: same signal within this window won't re-inject. */
+const ORCHESTRATOR_BUCKET_MS = 30 * 60 * 1000;
 
 export interface RuntimeWatchdogOptions {
   intervalMs: number;
+}
+
+export interface RuntimeCycleDeps {
+  hasTmuxSession: (sessionName: string) => Promise<boolean>;
+  sendTmuxInput: (sessionName: string, text: string) => Promise<void>;
+  isPaneBusy?: (sessionName: string) => Promise<boolean>;
+}
+
+export async function runRuntimeCycle(
+  labDir: string,
+  config: LabConfig,
+  runtimeState: RuntimeState,
+  deps: RuntimeCycleDeps = { hasTmuxSession, sendTmuxInput, isPaneBusy },
+): Promise<RuntimeState> {
+  const agentNames = Object.keys(config.agents);
+  const { loadKanbanBoard, loadLatestMeeting, loadRecentMessages } = await loadServerModule();
+
+  const [board, meeting, messages] = await Promise.all([
+    loadKanbanBoard(labDir, config),
+    loadLatestMeeting(labDir, config),
+    loadRecentMessages(labDir, config, 200),
+  ]);
+
+  const pendingByAgent: Record<string, NonNullable<ReturnType<typeof buildPendingAgentPrompt>>> = {};
+  for (const agentName of agentNames) {
+    const unreadMessages = messages.filter(
+      (m) => m.to === agentName && m.status === 'unread',
+    );
+    const assignedTasks = board.tasks.filter(
+      (t) => t.assignee === agentName && (t.status === 'assigned' || t.status === 'in_progress'),
+    );
+    const pending = buildPendingAgentPrompt({
+      agentName,
+      unreadMessages,
+      assignedTasks,
+      runtimeState,
+      meeting,
+    });
+    if (pending) pendingByAgent[agentName] = pending;
+  }
+
+  // L2 orchestrator overlay: fires when supervisor would otherwise NOT receive a
+  // fresh injection this cycle — either no pending at all, or pending whose
+  // signature matches `lastPromptSignature` (the watchdog will skip it). The
+  // common deadlock has supervisor's own task in_progress but unchanged: pending
+  // exists, signature unchanged, no injection ever fires. Without this overlay
+  // L2 would be preempted by that stale pending and never trigger.
+  // Overlay only when summary.hasSignal (stuck task / empty-review-with-active /
+  // stalled meeting). Dedup via 30min bucket signature.
+  if (agentNames.includes('supervisor')) {
+    const supervisorPending = pendingByAgent.supervisor;
+    const lastSig = runtimeState.agentAutomation?.supervisor?.lastPromptSignature;
+    const wouldInject = supervisorPending && supervisorPending.signature !== lastSig;
+    if (!wouldInject) {
+      const nowMs = Date.now();
+      const summary = buildOrchestratorSummary({ board, meeting, messages, nowMs });
+      if (summary.hasSignal) {
+        const bucket = Math.floor(nowMs / ORCHESTRATOR_BUCKET_MS);
+        pendingByAgent.supervisor = {
+          prompt: renderOrchestratorPrompt(summary),
+          signature: `orchestrator:${bucket}:${summary.stuckTasks.map((t) => t.id).join(',')}:${summary.reviewColumnEmptyForMs !== null ? 'rev' : ''}:${summary.meetingPhase ?? ''}`,
+        };
+      }
+    }
+  }
+
+  return runWatchdogCycle({
+    agentNames,
+    labDir,
+    runtimeState,
+    pendingByAgent,
+    deps,
+  });
 }
 
 export async function runRuntimeWatchdog(
@@ -35,31 +112,7 @@ export async function runRuntimeWatchdog(
     while (running) {
       try {
         const runtimeState = await readRuntimeState(runtimePath);
-        const agentNames = Object.keys(config.agents);
-
-        const pendingByAgent: Record<string, ReturnType<typeof buildPendingAgentPrompt>> = {};
-        for (const agentName of agentNames) {
-          // TODO: integrate collectAgentFacts, listAgentMessages, and meeting lookup
-          // for a fully data-driven prompt. For now stub with empty inputs so the
-          // loop scaffolding and start/stop wiring is exercised end-to-end.
-          const pending = buildPendingAgentPrompt({
-            agentName,
-            unreadMessages: [],
-            assignedTasks: [],
-            runtimeState,
-            meeting: null,
-          });
-          if (pending) pendingByAgent[agentName] = pending;
-        }
-
-        const nextState = await runWatchdogCycle({
-          agentNames,
-          labDir,
-          runtimeState,
-          pendingByAgent: pendingByAgent as Record<string, NonNullable<ReturnType<typeof buildPendingAgentPrompt>>>,
-          deps: { hasTmuxSession, sendTmuxInput },
-        });
-
+        const nextState = await runRuntimeCycle(labDir, config, runtimeState);
         await writeRuntimeStateAtomically(runtimePath, nextState);
       } catch (err) {
         console.error('[runtime-watchdog] cycle failed:', err);

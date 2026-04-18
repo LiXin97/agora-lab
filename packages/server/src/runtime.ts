@@ -63,18 +63,20 @@ export async function loadRecentMessages(
   try {
     const messageRoot = join(labDir, config.communication.messageDir);
     const entries = await readdir(messageRoot, { withFileTypes: true });
+    // Message filenames are timestamp-prefixed, so sorting lexically puts the
+    // most recent last — we only need to read the tail.
     const files = entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-      .map((entry) => entry.name);
+      .map((entry) => entry.name)
+      .sort()
+      .slice(-limit);
 
-    const messages: AgentMessage[] = [];
-    for (const file of files) {
-      try {
-        messages.push(parseMessage(await readFile(join(messageRoot, file), 'utf-8')));
-      } catch {
-        // Skip malformed message artifacts so one bad file does not blank the feed.
-      }
-    }
+    const results = await Promise.allSettled(
+      files.map((file) => readFile(join(messageRoot, file), 'utf-8').then(parseMessage)),
+    );
+    const messages = results
+      .filter((r): r is PromiseFulfilledResult<AgentMessage> => r.status === 'fulfilled')
+      .map((r) => r.value);
     return messages
       .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
       .slice(-limit);
