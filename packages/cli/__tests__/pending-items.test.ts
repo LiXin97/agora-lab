@@ -102,6 +102,38 @@ describe('buildPendingAgentPrompt', () => {
     expect(result?.prompt).toContain('Active meeting: mtg-42');
   });
 
+  it('produces distinct signatures when meeting phase changes (re-injects on advance)', async () => {
+    const base = {
+      agentName: 'student-a' as const,
+      unreadMessages: [],
+      assignedTasks: [],
+      runtimeState: { version: 2 as const, supervisorKickoffSentAt: '2026-04-17T00:00:00Z' },
+    };
+    const prepare = await buildPendingAgentPrompt({
+      ...base,
+      meeting: {
+        id: 'mtg-42',
+        phase: 'PREPARE',
+        participants: ['student-a'],
+        decisionMaker: 'supervisor',
+        artifacts: { perspectives: {}, judgments: {}, critiques: {}, responses: {} },
+        createdAt: '2026-04-17T00:00:00Z',
+      },
+    });
+    const challenge = await buildPendingAgentPrompt({
+      ...base,
+      meeting: {
+        id: 'mtg-42',
+        phase: 'CHALLENGE',
+        participants: ['student-a'],
+        decisionMaker: 'supervisor',
+        artifacts: { perspectives: {}, judgments: {}, critiques: {}, responses: {} },
+        createdAt: '2026-04-17T00:00:00Z',
+      },
+    });
+    expect(prepare?.signature).not.toBe(challenge?.signature);
+  });
+
   it('produces identical signatures for identical inputs supplied in different order', async () => {
     const msg1: AgentMessage = { ...BASE_MSG, timestamp: '2026-04-17T01:00:00Z', content: 'first' };
     const msg2: AgentMessage = { ...BASE_MSG, timestamp: '2026-04-17T02:00:00Z', content: 'second' };
