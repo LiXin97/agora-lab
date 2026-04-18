@@ -46,9 +46,12 @@ describe('buildSessionName', () => {
 });
 
 describe('buildStartCommand', () => {
-  it('builds claude-code command', () => {
-    const cmd = buildStartCommand('claude-code', '/path');
-    expect(cmd).toContain('claude');
-    expect(cmd).toContain('/path');
+  it('builds claude-code command with a kickoff prompt, not the workspace path', () => {
+    const cmd = buildStartCommand('claude-code', '/path/to/workspace');
+    expect(cmd).toContain('claude --dangerously-skip-permissions');
+    expect(cmd).toContain('Session Start Checklist');
+    // The workspace path must NOT be passed as a positional — it'd be parsed
+    // as a user prompt, leaving the agent idle waiting for instructions.
+    expect(cmd).not.toContain('/path/to/workspace');
   });
 });
